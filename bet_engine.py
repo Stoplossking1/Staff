@@ -575,7 +575,7 @@ def print_terminal_block(decision: dict[str, Any], bankroll_usd: float) -> None:
     print("\n".join(lines))
 
 
-def append_paper_bet_row(decision: dict[str, Any], bankroll_usd: float, csv_path: Path) -> None:
+def append_paper_bet_row(decision: dict[str, Any], bankroll_usd: float, csv_path: Path, session_id: str = "unknown") -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     write_header = (not csv_path.exists()) or csv_path.stat().st_size == 0
 
@@ -603,6 +603,12 @@ def append_paper_bet_row(decision: dict[str, Any], bankroll_usd: float, csv_path
         if write_header:
             writer.writeheader()
         writer.writerow(row)
+
+    try:
+        import convex_sink
+        convex_sink.push_paper_bet(decision, bankroll_usd, session_id=session_id)
+    except Exception:
+        pass  # Convex push is best-effort; CSV is the primary sink
 
 
 def _parse_args() -> argparse.Namespace:
@@ -699,7 +705,7 @@ def main() -> None:
             )
 
         print_terminal_block(decision, bankroll_usd=risk.bankroll_usd)
-        append_paper_bet_row(decision, bankroll_usd=risk.bankroll_usd, csv_path=args.paper_bets_path)
+        append_paper_bet_row(decision, bankroll_usd=risk.bankroll_usd, csv_path=args.paper_bets_path, session_id=race_state.get("session_id", "unknown"))
 
         if args.output_json:
             args.output_json.parent.mkdir(parents=True, exist_ok=True)

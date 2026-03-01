@@ -13,6 +13,7 @@ import re
 import time
 from typing import Any, Mapping
 
+import convex_sink
 from observability import (
     initialize_laminar_from_env,
     set_laminar_span_output,
@@ -753,6 +754,9 @@ def run_loop(config: VisionRuntimeConfig, once: bool = False) -> None:
                     print(json.dumps(envelope, separators=(",", ":")), flush=True)
                     if config.output_path:
                         _append_emission(config.output_path, envelope)
+                    convex_sink.push_race_state(envelope["race_state"])
+                    for ev in envelope["race_events"]:
+                        convex_sink.push_race_event(ev, session_id=config.session_id)
                     set_laminar_span_output(
                         output={
                             "status": "ok",
