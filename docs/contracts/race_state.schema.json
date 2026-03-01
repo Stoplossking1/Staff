@@ -83,6 +83,43 @@
         }
       }
     },
+    "cooldown_state": {
+      "type": "object",
+      "description": "Optional derived timing metadata for neutralization cooldown gating in decisioning. When omitted, decisioning should fail closed (NO_BET) and surface an upstream anomaly.",
+      "additionalProperties": false,
+      "required": [
+        "last_neutralization",
+        "seconds_since_green_from_yellow_or_vsc",
+        "seconds_since_safety_car_restart"
+      ],
+      "properties": {
+        "last_neutralization": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "YELLOW_FLAG",
+            "VSC",
+            "SAFETY_CAR"
+          ]
+        },
+        "seconds_since_green_from_yellow_or_vsc": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Elapsed seconds since the most recent transition from YELLOW_FLAG or VSC to GREEN. Null when no such GREEN transition has occurred yet."
+        },
+        "seconds_since_safety_car_restart": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Elapsed seconds since the most recent SAFETY_CAR restart to GREEN. Null when no restart has occurred yet."
+        }
+      }
+    },
     "active_events": {
       "type": "array",
       "description": "Currently actionable events carried into decisioning.",
@@ -133,6 +170,11 @@
         "air_temp_c": 24.1,
         "precipitation_pct": 10,
         "wind_kph": 15.4
+      },
+      "cooldown_state": {
+        "last_neutralization": "YELLOW_FLAG",
+        "seconds_since_green_from_yellow_or_vsc": null,
+        "seconds_since_safety_car_restart": null
       },
       "active_events": [
         {

@@ -31,6 +31,7 @@ No phase advancement without previous phase merge + checklist pass.
 
 - Gate 3: Evidence-backed validation
 - Every PR must include a local test command and evidence paths/logs.
+- Minimum contract/policy check: `node scripts/validate_policy_consistency.js`.
 - If a test is unavailable, PR must explicitly state why and include manual verification steps.
 
 ## Merge Procedure
