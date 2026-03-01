@@ -203,7 +203,9 @@ class BrowserUseFrameAnalyzer:
                 )
                 return result
             except Exception as exc:  # fail closed to NO_BET-friendly state
-                diagnostic = f"browser_use_cloud_error: {exc}"
+                diagnostic = f"browser_use_cloud_error: {type(exc).__name__}: {exc}"
+                import sys
+                print(diagnostic, file=sys.stderr, flush=True)
                 set_laminar_span_output(
                     output={"status": "error", "diagnostic": diagnostic},
                     tags=["status:error", "stage:detection"],
@@ -242,6 +244,11 @@ class BrowserUseFrameAnalyzer:
                 vision=True,
                 schema=_FrameAnalysis,
                 max_steps=self.config.browser_use_max_steps,
+                system_prompt_extension=(
+                    "If you see a browser warning, ngrok interstitial, or a page asking you "
+                    "to 'Visit Site' or 'Accept', click through it to reach the actual website "
+                    "before doing anything else."
+                ),
             )
 
             async def _await() -> Any:
