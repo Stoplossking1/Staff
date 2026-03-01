@@ -4,6 +4,7 @@ import { v } from "convex/values";
 export const insert = mutation({
   args: {
     session_id: v.string(),
+    schema_version: v.optional(v.string()),
     logged_at_utc: v.string(),
     decision_id: v.string(),
     event_id: v.string(),
@@ -26,15 +27,16 @@ export const insert = mutation({
 });
 
 export const listBySession = query({
-  args: { session_id: v.string() },
+  args: { session_id: v.string(), limit: v.optional(v.float64()) },
   handler: async (ctx, args) => {
+    const n = args.limit ?? 200;
     return await ctx.db
       .query("paper_bets")
       .withIndex("by_session_and_time", (q) =>
         q.eq("session_id", args.session_id)
       )
       .order("desc")
-      .collect();
+      .take(n);
   },
 });
 

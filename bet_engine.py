@@ -604,8 +604,11 @@ def append_paper_bet_row(decision: dict[str, Any], bankroll_usd: float, csv_path
             writer.writeheader()
         writer.writerow(row)
 
-    import convex_sink
-    convex_sink.push_paper_bet(decision, bankroll_usd, session_id=decision.get("session_id", "unknown"))
+    try:
+        import convex_sink
+        convex_sink.push_paper_bet(decision, bankroll_usd, session_id=decision.get("session_id", "unknown"))
+    except Exception:
+        pass  # Convex push is best-effort; CSV is the primary sink
 
 
 def _parse_args() -> argparse.Namespace:

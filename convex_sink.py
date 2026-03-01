@@ -44,6 +44,7 @@ def push_paper_bet(decision: dict[str, Any], bankroll_usd: float, session_id: st
         fire_state = "FIRE" if decision.get("action") == "PLACE_BET" else "NO_FIRE"
         client.mutation("paperBets:insert", {
             "session_id": session_id,
+            "schema_version": decision.get("schema_version", "1.0.0"),
             "logged_at_utc": _utc_now_iso(),
             "decision_id": decision["decision_id"],
             "event_id": decision["event_id"],
@@ -110,7 +111,6 @@ def push_session(session_id: str, status: str, config: dict[str, Any]) -> None:
             "session_id": session_id,
             "status": status,
             "config": config,
-            "started_at_utc": now,
             "updated_at_utc": now,
         })
     except Exception:

@@ -27,10 +27,16 @@ export const upsert = mutation({
 });
 
 export const getCurrent = query({
-  handler: async (ctx) => {
-    return await ctx.db
+  args: { name: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const name = args.name ?? "event_to_bet_policy";
+    const entries = await ctx.db
       .query("bet_library")
-      .order("desc")
-      .first();
+      .withIndex("by_name_version", (q) => q.eq("name", name))
+      .collect();
+    if (entries.length === 0) return null;
+    return entries.reduce((latest, entry) =>
+      entry.updated_at_utc > latest.updated_at_utc ? entry : latest
+    );
   },
 });

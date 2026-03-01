@@ -32,14 +32,15 @@ export const insert = mutation({
 });
 
 export const listBySession = query({
-  args: { session_id: v.string() },
+  args: { session_id: v.string(), limit: v.optional(v.float64()) },
   handler: async (ctx, args) => {
+    const n = args.limit ?? 200;
     return await ctx.db
       .query("race_events")
       .withIndex("by_session_and_time", (q) =>
         q.eq("session_id", args.session_id)
       )
       .order("desc")
-      .collect();
+      .take(n);
   },
 });

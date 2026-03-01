@@ -6,7 +6,6 @@ export const upsert = mutation({
     session_id: v.string(),
     status: v.string(),
     config: v.any(),
-    started_at_utc: v.optional(v.string()),
     updated_at_utc: v.string(),
   },
   handler: async (ctx, args) => {
@@ -22,7 +21,10 @@ export const upsert = mutation({
       });
       return existing._id;
     }
-    return await ctx.db.insert("sessions", args);
+    return await ctx.db.insert("sessions", {
+      ...args,
+      started_at_utc: args.updated_at_utc,
+    });
   },
 });
 
