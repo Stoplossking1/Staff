@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import json
 from pathlib import Path
@@ -211,7 +211,7 @@ class RaceState:
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _contract_path(schema_filename: str, contracts_dir: Path | None = None) -> Path:
@@ -228,6 +228,7 @@ def validate_payload(payload: Mapping[str, Any], schema_filename: str, contracts
     """Validate payload using JSON Schema draft 2020-12 with local ref resolution."""
     try:
         import jsonschema
+        from referencing import Registry, Resource
     except ImportError as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
             "jsonschema is required for contract validation. Install with: pip install jsonschema"
@@ -235,8 +236,17 @@ def validate_payload(payload: Mapping[str, Any], schema_filename: str, contracts
 
     schema_path = _contract_path(schema_filename, contracts_dir)
     schema = _load_json(schema_path)
-    resolver = jsonschema.RefResolver(base_uri=schema_path.parent.resolve().as_uri() + "/", referrer=schema)
-    validator = jsonschema.Draft202012Validator(schema, resolver=resolver)
+    schema_uri = schema_path.resolve().as_uri()
+    # Use an absolute base ID so sibling refs like "_common.schema.json#/$defs/..." resolve cleanly.
+    schema_with_absolute_id = dict(schema)
+    schema_with_absolute_id["$id"] = schema_uri
+
+    registry = Registry()
+    for candidate in schema_path.parent.glob("*.json"):
+        resource = Resource.from_contents(_load_json(candidate))
+        registry = registry.with_resource(candidate.resolve().as_uri(), resource)
+
+    validator = jsonschema.Draft202012Validator(schema_with_absolute_id, registry=registry)
     errors = sorted(validator.iter_errors(dict(payload)), key=lambda err: list(err.path))
     if errors:
         details = "; ".join(f"{'/'.join(map(str, err.path)) or '<root>'}: {err.message}" for err in errors)

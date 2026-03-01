@@ -558,21 +558,29 @@ def get_live_race_state(
     weather = _parse_weather(weather_raw, previous.weather if previous else None)
 
     flag_status = _resolve_flag_status(analysis.get("flag_status"), new_events, previous)
+    tracked_cooldown_state = _build_cooldown_state(now, flag_status, session)
 
     uncertain = state_confidence < config.state_confidence_threshold
     if uncertain:
-        # Fail closed on uncertainty: omit cooldown metadata and clear active signals to encourage upstream NO_BET.
+        # Fail closed on uncertainty for emitted payloads, but preserve session continuity for recovery.
         new_events = []
-        active_events: list[RaceEvent] = []
+        emitted_active_events: list[RaceEvent] = []
+        session_active_events = _merge_active_events(
+            existing=session.active_events,
+            new_events=[],
+            horizon_seconds=config.active_event_horizon_s,
+            now_time_s=frame_time_s,
+        )
         cooldown_state = None
     else:
-        active_events = _merge_active_events(
+        session_active_events = _merge_active_events(
             existing=session.active_events,
             new_events=new_events,
             horizon_seconds=config.active_event_horizon_s,
             now_time_s=frame_time_s,
         )
-        cooldown_state = _build_cooldown_state(now, flag_status, session)
+        emitted_active_events = session_active_events
+        cooldown_state = tracked_cooldown_state
 
     state = RaceState(
         schema_version=SCHEMA_VERSION,
@@ -582,7 +590,7 @@ def get_live_race_state(
         flag_status=flag_status,
         weather=weather,
         cooldown_state=cooldown_state,
-        active_events=to_active_events(active_events),
+        active_events=to_active_events(emitted_active_events),
     )
 
     if config.validate_contracts:
@@ -590,7 +598,7 @@ def get_live_race_state(
             validate_race_event(event)
         validate_race_state(state)
 
-    session.active_events = active_events
+    session.active_events = session_active_events
     session.previous_state = state
     return state, new_events
 
