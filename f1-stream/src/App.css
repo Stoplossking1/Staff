@@ -1,0 +1,55 @@
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ticker {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.live-dot {
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+.fastest-lap-banner {
+  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.15);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+}
+
+button {
+  all: unset;
+  cursor: pointer;
+}
