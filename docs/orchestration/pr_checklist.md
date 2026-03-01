@@ -28,6 +28,7 @@ Copy this into every PR description.
 ### Local test command
 - Command(s):
 - Result summary:
+- Recommended minimum: `node scripts/validate_policy_consistency.js`
 
 ### Evidence paths/logs
 - File path(s):

@@ -38,6 +38,7 @@ Contracts are versioned via top-level `schema_version`.
 - PR includes: Local test command.
 - PR includes: Evidence paths/logs.
 - Contract validation passes for all produced/consumed payloads.
+- Policy consistency validation passes: `node scripts/validate_policy_consistency.js`.
 
 Detailed merge controls:
 - [Merge plan](docs/orchestration/merge_plan.md)

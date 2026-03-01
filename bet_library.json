@@ -1,0 +1,341 @@
+{
+  "schema_version": "1.0.0",
+  "name": "event_to_bet_policy",
+  "contract_refs": {
+    "event_schema": "docs/contracts/race_event.schema.json",
+    "state_schema": "docs/contracts/race_state.schema.json",
+    "decision_schema": "docs/contracts/bet_decision.schema.json",
+    "event_matrix": "docs/contracts/event_to_market_matrix.md"
+  },
+  "supported_event_types": [
+    "OVERTAKE",
+    "YELLOW_FLAG",
+    "SAFETY_CAR",
+    "VSC",
+    "PIT_STOP",
+    "CRASH",
+    "SPIN",
+    "TRACK_LIMITS",
+    "WEATHER_SHIFT",
+    "RETIREMENT",
+    "FASTEST_LAP"
+  ],
+  "decision_guardrails": {
+    "evaluation_order": [
+      "HARD_NO_BET",
+      "PLACE_BET",
+      "MONITOR",
+      "NO_BET_FALLBACK"
+    ],
+    "decision_confidence": {
+      "monitor_min": 0.65,
+      "place_bet_min": 0.8
+    },
+    "edge_pct": {
+      "monitor_min_abs": 1.0,
+      "place_bet_min_abs": 3.0
+    },
+    "market_data": {
+      "max_quote_age_s": 10,
+      "min_liquidity_usd": 1000
+    },
+    "cooldowns_s": {
+      "post_green_from_yellow_or_vsc": 20,
+      "post_safety_car_restart": 30
+    },
+    "deterministic_replay": {
+      "event_priority_by_severity": [
+        "CRITICAL",
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "INFO"
+      ],
+      "event_tie_breakers_in_order": [
+        "confidence_desc",
+        "timestamp_s_asc",
+        "event_id_lexicographic_asc"
+      ],
+      "market_selection_rule": "Pick the first live market in market_priority that is listed in the selected event candidate_markets."
+    }
+  },
+  "hard_no_bet_conditions": [
+    "No active events in race_state.active_events.",
+    "event_type is not in supported_event_types.",
+    "event.confidence is below the per-event min_event_confidence.",
+    "decision.confidence is below decision_guardrails.decision_confidence.monitor_min.",
+    "abs(edge_pct) is below decision_guardrails.edge_pct.monitor_min_abs.",
+    "Market quote age exceeds decision_guardrails.market_data.max_quote_age_s.",
+    "Market liquidity is below decision_guardrails.market_data.min_liquidity_usd.",
+    "race_state.flag_status is RED or DOUBLE_YELLOW.",
+    "If race_state.cooldown_state.last_neutralization is YELLOW_FLAG or VSC, race_state.cooldown_state.seconds_since_green_from_yellow_or_vsc must be >= decision_guardrails.cooldowns_s.post_green_from_yellow_or_vsc.",
+    "If race_state.cooldown_state.last_neutralization is SAFETY_CAR, race_state.cooldown_state.seconds_since_safety_car_restart must be >= decision_guardrails.cooldowns_s.post_safety_car_restart.",
+    "When evaluating PLACE_BET eligibility, supports_place_bet is false.",
+    "No candidate market from the event is currently live."
+  ],
+  "side_rules": {
+    "for_no_bet": {
+      "side": "NONE",
+      "action": "NO_BET",
+      "kelly_fraction": 0,
+      "size_usd": 0
+    },
+    "for_monitor": {
+      "abs_edge_pct_lt_1_0": "NONE",
+      "edge_pct_gte_1_0": "YES",
+      "edge_pct_lte_-1_0": "NO"
+    },
+    "for_place_bet": {
+      "edge_pct_gte_3_0": "YES",
+      "edge_pct_lte_-3_0": "NO"
+    }
+  },
+  "market_priority": [
+    "DRIVER_RETIREMENT",
+    "SAFETY_CAR_DEPLOYMENT",
+    "RACE_WINNER",
+    "PODIUM_FINISH",
+    "POINTS_FINISH",
+    "TOP_6_FINISH",
+    "HEAD_TO_HEAD",
+    "FINISHING_POSITION",
+    "FASTEST_LAP",
+    "PIT_STRATEGY",
+    "TYRE_STRATEGY",
+    "PENALTY_POSITION"
+  ],
+  "event_type_rules": [
+    {
+      "event_type": "OVERTAKE",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "RACE_WINNER",
+        "PODIUM_FINISH",
+        "TOP_6_FINISH",
+        "HEAD_TO_HEAD"
+      ],
+      "min_event_confidence": 0.72,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "race_state.flag_status is GREEN.",
+        "Overtake impact persists for at least 1 full lap.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Overtake did not persist or edge/decision confidence is insufficient."
+      }
+    },
+    {
+      "event_type": "YELLOW_FLAG",
+      "default_action": "NO_BET",
+      "candidate_markets": [
+        "SAFETY_CAR_DEPLOYMENT",
+        "RACE_WINNER"
+      ],
+      "min_event_confidence": 0.8,
+      "supports_place_bet": false,
+      "place_bet_requirements": [],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Yellow flag windows are price-unstable; hold until GREEN and cooldown passes."
+      }
+    },
+    {
+      "event_type": "SAFETY_CAR",
+      "default_action": "NO_BET",
+      "candidate_markets": [
+        "RACE_WINNER",
+        "FASTEST_LAP",
+        "PIT_STRATEGY",
+        "SAFETY_CAR_DEPLOYMENT"
+      ],
+      "min_event_confidence": 0.9,
+      "supports_place_bet": false,
+      "place_bet_requirements": [],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Safety car periods frequently suspend markets and create discontinuous pricing."
+      }
+    },
+    {
+      "event_type": "VSC",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "RACE_WINNER",
+        "PIT_STRATEGY",
+        "HEAD_TO_HEAD"
+      ],
+      "min_event_confidence": 0.85,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "race_state.flag_status is VSC.",
+        "Expected pit behavior is confirmed by at least one pit/traffic signal.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "VSC edge is unconfirmed or too short-lived for reliable pricing."
+      }
+    },
+    {
+      "event_type": "PIT_STOP",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "HEAD_TO_HEAD",
+        "FINISHING_POSITION",
+        "PIT_STRATEGY"
+      ],
+      "min_event_confidence": 0.75,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Pit delta versus nearest rivals is validated.",
+        "Traffic projection confirms clean rejoin outcome.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Pit outcome is uncertain without validated delta and traffic projection."
+      }
+    },
+    {
+      "event_type": "CRASH",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "DRIVER_RETIREMENT",
+        "RACE_WINNER",
+        "PODIUM_FINISH",
+        "SAFETY_CAR_DEPLOYMENT"
+      ],
+      "min_event_confidence": 0.78,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Incident creates durable probability change (retirement, major damage, or prolonged yellow/SC).",
+        "A live market exists after suspension checks.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Crash impact is not yet durable or market status is unstable."
+      }
+    },
+    {
+      "event_type": "SPIN",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "HEAD_TO_HEAD",
+        "FINISHING_POSITION"
+      ],
+      "min_event_confidence": 0.7,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Pace recovery is not observed for at least 1 lap.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Spin appears recoverable and does not yet produce durable edge."
+      }
+    },
+    {
+      "event_type": "TRACK_LIMITS",
+      "default_action": "NO_BET",
+      "candidate_markets": [
+        "PENALTY_POSITION"
+      ],
+      "min_event_confidence": 0.88,
+      "supports_place_bet": false,
+      "place_bet_requirements": [],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Track limits alone is weak without steward escalation; policy is explicit NO_BET."
+      }
+    },
+    {
+      "event_type": "WEATHER_SHIFT",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "TYRE_STRATEGY",
+        "RACE_WINNER",
+        "FASTEST_LAP"
+      ],
+      "min_event_confidence": 0.76,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Weather condition transition persists for at least 2 consecutive state ticks.",
+        "Strategy impact aligns with tyre/pit readiness.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Weather signal or strategy alignment is not strong enough."
+      }
+    },
+    {
+      "event_type": "RETIREMENT",
+      "default_action": "PLACE_BET",
+      "candidate_markets": [
+        "RACE_WINNER",
+        "PODIUM_FINISH",
+        "POINTS_FINISH",
+        "DRIVER_RETIREMENT"
+      ],
+      "min_event_confidence": 0.92,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Retirement is explicitly confirmed (car stopped in garage, official notice, or commentary confirmation + visual).",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Retirement not sufficiently confirmed or edge below threshold."
+      }
+    },
+    {
+      "event_type": "FASTEST_LAP",
+      "default_action": "MONITOR",
+      "candidate_markets": [
+        "FASTEST_LAP",
+        "RACE_WINNER"
+      ],
+      "min_event_confidence": 0.74,
+      "supports_place_bet": true,
+      "place_bet_requirements": [
+        "Lap-time trend supports repeatability over at least 3 timed laps.",
+        "decision.confidence >= 0.8.",
+        "abs(edge_pct) >= 3.0."
+      ],
+      "no_bet_path": {
+        "action": "NO_BET",
+        "side": "NONE",
+        "reason": "Fastest lap signal is isolated and not persistent."
+      }
+    }
+  ],
+  "no_event_policy": {
+    "when_active_events_empty": {
+      "action": "NO_BET",
+      "side": "NONE",
+      "kelly_fraction": 0,
+      "size_usd": 0,
+      "reason": "No actionable events in RaceState.active_events."
+    }
+  }
+}

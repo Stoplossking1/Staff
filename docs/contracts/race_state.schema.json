@@ -83,6 +83,35 @@
         }
       }
     },
+    "cooldown_state": {
+      "type": "object",
+      "description": "Derived timing metadata for neutralization cooldown gating in decisioning.",
+      "additionalProperties": false,
+      "required": [
+        "last_neutralization",
+        "seconds_since_green_from_yellow_or_vsc",
+        "seconds_since_safety_car_restart"
+      ],
+      "properties": {
+        "last_neutralization": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "YELLOW_FLAG",
+            "VSC",
+            "SAFETY_CAR"
+          ]
+        },
+        "seconds_since_green_from_yellow_or_vsc": {
+          "type": "number",
+          "minimum": 0
+        },
+        "seconds_since_safety_car_restart": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "active_events": {
       "type": "array",
       "description": "Currently actionable events carried into decisioning.",
@@ -133,6 +162,11 @@
         "air_temp_c": 24.1,
         "precipitation_pct": 10,
         "wind_kph": 15.4
+      },
+      "cooldown_state": {
+        "last_neutralization": "YELLOW_FLAG",
+        "seconds_since_green_from_yellow_or_vsc": 24,
+        "seconds_since_safety_car_restart": 9999
       },
       "active_events": [
         {
