@@ -1,16 +1,46 @@
-# React + Vite
+# f1-stream
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Minimal replay stream source for vision agents.
 
-Currently, two official plugins are available:
+## Local startup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+cd f1-stream
+npm ci
+npm run stream
+```
 
-## React Compiler
+Stable local URL:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `http://127.0.0.1:4173/`
 
-## Expanding the ESLint configuration
+Direct media URL:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `http://127.0.0.1:4173/lando.mp4`
+
+## Playback contract
+
+The stream surface intentionally renders only one real replay video (`lando.mp4`) with no synthetic HUD overlays.
+
+The `<video>` element is configured with:
+
+- `autoPlay`
+- `muted`
+- `loop`
+- `playsInline`
+- `preload="auto"`
+
+## Stability notes
+
+- `lando.mp4` is served from `public/lando.mp4` so it is available in both dev and preview modes.
+- The player retries `play()` on `canplay`, on periodic health checks, and after stalled events.
+- A fixed host/port (`127.0.0.1:4173`) is provided by `npm run stream` for a stable agent-facing endpoint.
+
+## Optional preview mode
+
+```bash
+cd f1-stream
+npm ci
+npm run build
+npm run stream:preview
+```
