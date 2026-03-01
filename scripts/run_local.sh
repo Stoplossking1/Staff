@@ -30,12 +30,19 @@ stream_pid=""
 agent_pid=""
 
 cleanup() {
+  local pids_to_kill=()
   if [[ -n "$agent_pid" ]] && kill -0 "$agent_pid" >/dev/null 2>&1; then
-    kill "$agent_pid" >/dev/null 2>&1 || true
+    pids_to_kill+=("agent:$agent_pid")
   fi
   if [[ -n "$stream_pid" ]] && kill -0 "$stream_pid" >/dev/null 2>&1; then
-    kill "$stream_pid" >/dev/null 2>&1 || true
+    pids_to_kill+=("stream:$stream_pid")
   fi
+  if [[ ${#pids_to_kill[@]} -gt 0 ]]; then
+    printf "Stopping remaining processes: %s\n" "${pids_to_kill[*]}"
+  fi
+  for entry in "${pids_to_kill[@]}"; do
+    kill "${entry#*:}" >/dev/null 2>&1 || true
+  done
 }
 
 trap cleanup EXIT INT TERM
@@ -64,12 +71,28 @@ agent_pid=$!
 
 wait -n "$stream_pid" "$agent_pid" && exit_code=0 || exit_code=$?
 
-if ! kill -0 "$stream_pid" >/dev/null 2>&1; then
-  printf "ERROR: Stream process (PID %s) crashed with exit code %s.\n" "$stream_pid" "$exit_code"
+stream_alive=true
+agent_alive=true
+kill -0 "$stream_pid" >/dev/null 2>&1 || stream_alive=false
+kill -0 "$agent_pid"  >/dev/null 2>&1 || agent_alive=false
+
+if [[ "$stream_alive" == false ]]; then
+  printf "ERROR: Stream process (PID %s) exited unexpectedly (exit code %s). Shutting down.\n" \
+    "$stream_pid" "$exit_code"
   exit 1
 fi
 
-if ! kill -0 "$agent_pid" >/dev/null 2>&1; then
-  printf "Agent exited with code %s.\n" "$exit_code"
+if [[ "$agent_alive" == false ]]; then
+  printf "Agent (PID %s) exited with code %s.\n" "$agent_pid" "$exit_code"
   exit "$exit_code"
 fi
+
+printf "WARNING: wait -n returned but both processes still running. Re-waiting.\n"
+wait -n "$stream_pid" "$agent_pid" && exit_code=0 || exit_code=$?
+kill -0 "$stream_pid" >/dev/null 2>&1 || {
+  printf "ERROR: Stream process (PID %s) exited unexpectedly (exit code %s). Shutting down.\n" \
+    "$stream_pid" "$exit_code"
+  exit 1
+}
+printf "Agent (PID %s) exited with code %s.\n" "$agent_pid" "$exit_code"
+exit "$exit_code"
