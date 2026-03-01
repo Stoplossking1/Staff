@@ -91,7 +91,7 @@ class VisionRuntimeConfig:
         default_factory=lambda: os.getenv("VISION_VALIDATE_CONTRACTS", "1").strip() not in {"0", "false", "False"}
     )
     output_path: str = field(default_factory=lambda: os.getenv("VISION_OUTPUT_PATH", DEFAULT_OUTPUT_PATH))
-    openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
+    openai_model: str = field(default_factory=lambda: os.environ["OPENAI_MODEL"])
     browser_use_timeout_s: float = field(default_factory=lambda: float(os.getenv("VISION_BROWSER_USE_TIMEOUT", "45")))
     browser_use_max_steps: int = field(default_factory=lambda: int(os.getenv("VISION_BROWSER_USE_MAX_STEPS", "5")))
 
