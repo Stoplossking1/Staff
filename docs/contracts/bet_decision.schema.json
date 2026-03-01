@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docs/contracts/bet_decision.schema.json",
+  "title": "BetDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_id",
+    "event_id",
+    "market_id",
+    "side",
+    "confidence",
+    "model_probability",
+    "market_implied_probability",
+    "edge_pct",
+    "kelly_fraction",
+    "size_usd",
+    "action",
+    "reason"
+  ],
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "market_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable market identifier from the market adapter."
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BACK",
+        "LAY",
+        "NONE"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence in the decision quality, independent of directional edge."
+    },
+    "model_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "market_implied_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "edge_pct": {
+      "type": "number",
+      "description": "(model_probability - market_implied_probability) * 100"
+    },
+    "kelly_fraction": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "size_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "PLACE_BET",
+        "NO_BET",
+        "MONITOR"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "NO_BET"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "side": {
+            "const": "NONE"
+          },
+          "size_usd": {
+            "const": 0
+          },
+          "kelly_fraction": {
+            "const": 0
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "decision_id": "dec_20260301_0090",
+      "event_id": "evt_20260301_00125",
+      "market_id": "race_winner_norris",
+      "side": "NONE",
+      "confidence": 0.88,
+      "model_probability": 0.51,
+      "market_implied_probability": 0.5,
+      "edge_pct": 1,
+      "kelly_fraction": 0,
+      "size_usd": 0,
+      "action": "NO_BET",
+      "reason": "Edge is below minimum threshold after risk haircut; hold capital."
+    }
+  ]
+}
