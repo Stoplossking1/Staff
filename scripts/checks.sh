@@ -59,9 +59,11 @@ fi
 
 require_env OPENAI_API_KEY
 require_env LMNR_PROJECT_API_KEY
+require_env BROWSER_USE_API_KEY
 require_env AGENT_LOOP_CMD
 warn_if_placeholder OPENAI_API_KEY
 warn_if_placeholder LMNR_PROJECT_API_KEY
+warn_if_placeholder BROWSER_USE_API_KEY
 
 BROWSER_USE_MCP_MODE="${BROWSER_USE_MCP_MODE:-local}"
 if [[ "$BROWSER_USE_MCP_MODE" != "local" && "$BROWSER_USE_MCP_MODE" != "remote" ]]; then

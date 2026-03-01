@@ -4,10 +4,10 @@ import argparse
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import inspect
 import json
 import os
 from pathlib import Path
+from pydantic import BaseModel
 import random
 import re
 import time
@@ -91,7 +91,7 @@ class VisionRuntimeConfig:
         default_factory=lambda: os.getenv("VISION_VALIDATE_CONTRACTS", "1").strip() not in {"0", "false", "False"}
     )
     output_path: str = field(default_factory=lambda: os.getenv("VISION_OUTPUT_PATH", DEFAULT_OUTPUT_PATH))
-    openai_model: str = field(default_factory=lambda: os.environ["OPENAI_MODEL"])
+    openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-5.2-thinking"))
     browser_use_timeout_s: float = field(default_factory=lambda: float(os.getenv("VISION_BROWSER_USE_TIMEOUT", "45")))
     browser_use_max_steps: int = field(default_factory=lambda: int(os.getenv("VISION_BROWSER_USE_MAX_STEPS", "5")))
 
@@ -106,11 +106,63 @@ class RuntimeSession:
     last_safety_car_restart_at: datetime | None = None
 
 
+# ---------------------------------------------------------------------------
+# Pydantic output-schema models for the Browser Use Cloud structured output.
+# These must match the dict shape consumed by _build_race_events() downstream.
+# ---------------------------------------------------------------------------
+
+class _EvidenceOut(BaseModel):
+    source: str | None = None
+    start_s: float | None = None
+    end_s: float | None = None
+    summary: str | None = None
+    frame_refs: list[str] | None = None
+
+
+class _EntitiesOut(BaseModel):
+    drivers: list[str] | None = None
+    teams: list[str] | None = None
+    car_numbers: list[int] | None = None
+    lap: int | None = None
+    sector: int | None = None
+    location: str | None = None
+
+
+class _RaceEventOut(BaseModel):
+    event_type: str
+    severity: str | None = None
+    confidence: float = 0.0
+    timestamp_s: float | None = None
+    evidence: _EvidenceOut | None = None
+    entities: _EntitiesOut | None = None
+
+
+class _WeatherOut(BaseModel):
+    condition: str | None = None
+    track_temp_c: float | None = None
+    air_temp_c: float | None = None
+    precipitation_pct: float | None = None
+    wind_kph: float | None = None
+
+
+class _FrameAnalysis(BaseModel):
+    frame_time_s: float | None = None
+    lap: int | None = None
+    flag_status: str | None = None
+    weather: _WeatherOut | None = None
+    state_confidence: float = 0.0
+    events: list[_RaceEventOut] = []
+
+
+# ---------------------------------------------------------------------------
+
 class BrowserUseFrameAnalyzer:
-    """Browser Use wrapper that asks the model for a strictly-typed frame analysis JSON object."""
+    """Calls Browser Use Cloud to take a screenshot of the live stream and
+    return a contract-valid frame analysis dict on every tick."""
 
     def __init__(self, config: VisionRuntimeConfig) -> None:
         self.config = config
+        self._session_id: str | None = None
 
     def analyze_frame(self) -> dict[str, Any]:
         prompt = self._build_prompt()
@@ -119,7 +171,7 @@ class BrowserUseFrameAnalyzer:
             span_type="LLM",
             input_payload={
                 "stream_url": self.config.stream_url,
-                "model": self.config.openai_model,
+                "model": "browser-use-cloud",
             },
             metadata={
                 "session_id": self.config.session_id,
@@ -139,23 +191,20 @@ class BrowserUseFrameAnalyzer:
                 },
             )
             try:
-                raw = self._run_browser_use_task(prompt)
-                parsed = self._extract_json(raw)
-                if not isinstance(parsed, dict):
-                    raise ValueError("Browser Use response was not a JSON object")
-                parsed.setdefault("state_confidence", 0.0)
-                parsed.setdefault("events", [])
+                result = asyncio.run(self._async_analyze_frame(prompt))
+                result.setdefault("state_confidence", 0.0)
+                result.setdefault("events", [])
                 set_laminar_span_output(
                     output={
                         "status": "ok",
-                        "state_confidence": parsed.get("state_confidence", 0.0),
-                        "event_count": len(parsed.get("events", [])),
+                        "state_confidence": result.get("state_confidence", 0.0),
+                        "event_count": len(result.get("events", [])),
                     },
                     tags=["status:ok", "stage:detection"],
                 )
-                return parsed
+                return result
             except Exception as exc:  # fail closed to NO_BET-friendly state
-                diagnostic = f"browser_use_unavailable_or_invalid: {exc}"
+                diagnostic = f"browser_use_cloud_error: {exc}"
                 set_laminar_span_output(
                     output={"status": "error", "diagnostic": diagnostic},
                     tags=["status:error", "stage:detection"],
@@ -166,96 +215,91 @@ class BrowserUseFrameAnalyzer:
                     "diagnostic": diagnostic,
                 }
 
+    async def _async_analyze_frame(self, prompt: str) -> dict[str, Any]:
+        try:
+            from browser_use_sdk import AsyncBrowserUse  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "browser-use-sdk is required: pip install browser-use-sdk"
+            ) from exc
+
+        api_key = os.getenv("BROWSER_USE_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "BROWSER_USE_API_KEY is required for Browser Use Cloud analysis"
+            )
+
+        async with AsyncBrowserUse(api_key=api_key) as client:
+            if self._session_id is None:
+                session = await client.sessions.create(
+                    start_url=self.config.stream_url,
+                    keep_alive=True,
+                )
+                self._session_id = str(session.id)
+
+            task_run = client.run(
+                prompt,
+                session_id=self._session_id,
+                vision=True,
+                schema=_FrameAnalysis,
+                max_steps=self.config.browser_use_max_steps,
+            )
+
+            async def _await() -> Any:
+                return await task_run
+
+            task_result = await asyncio.wait_for(
+                _await(), timeout=self.config.browser_use_timeout_s
+            )
+
+        if task_result.output is None:
+            return {"state_confidence": 0.0, "events": []}
+        return task_result.output.model_dump()
+
+    def stop(self) -> None:
+        """Stop the persistent cloud browser session. Call on shutdown."""
+        if self._session_id is None:
+            return
+        session_id = self._session_id
+        self._session_id = None
+        try:
+            asyncio.run(self._async_stop_session(session_id))
+        except Exception:
+            pass
+
+    async def _async_stop_session(self, session_id: str) -> None:
+        try:
+            from browser_use_sdk import AsyncBrowserUse  # type: ignore
+        except ImportError:
+            return
+        api_key = os.getenv("BROWSER_USE_API_KEY", "").strip()
+        if not api_key:
+            return
+        async with AsyncBrowserUse(api_key=api_key) as client:
+            await client.sessions.stop(session_id)
+
     def _build_prompt(self) -> str:
         return (
-            "Open the F1 replay stream at this URL and analyze the current visible frame only:\n"
-            f"{self.config.stream_url}\n\n"
-            "Return strict JSON only with this shape:\n"
-            "{\n"
-            '  "frame_time_s": number|null,\n'
-            '  "lap": integer|null,\n'
-            '  "flag_status": "GREEN"|"YELLOW"|"DOUBLE_YELLOW"|"RED"|"SAFETY_CAR"|"VSC"|"CHEQUERED"|null,\n'
-            '  "weather": {\n'
-            '    "condition": "CLEAR"|"CLOUDY"|"LIGHT_RAIN"|"HEAVY_RAIN"|"MIXED"|null,\n'
-            '    "track_temp_c": number|null,\n'
-            '    "air_temp_c": number|null,\n'
-            '    "precipitation_pct": number|null,\n'
-            '    "wind_kph": number|null\n'
-            "  },\n"
-            '  "state_confidence": number,\n'
-            '  "events": [\n'
-            "    {\n"
-            '      "event_type": "OVERTAKE"|"YELLOW_FLAG"|"SAFETY_CAR"|"VSC"|"PIT_STOP"|"CRASH"|"SPIN"|"TRACK_LIMITS"|"WEATHER_SHIFT"|"RETIREMENT"|"FASTEST_LAP",\n'
-            '      "severity": "INFO"|"LOW"|"MEDIUM"|"HIGH"|"CRITICAL"|null,\n'
-            '      "confidence": number,\n'
-            '      "timestamp_s": number|null,\n'
-            '      "evidence": {"source": "VISION"|"OCR"|"COMMENTARY"|"MULTI_MODAL"|null, "start_s": number|null, "end_s": number|null, "summary": string|null, "frame_refs": [string]|null},\n'
-            '      "entities": {"drivers": [string]|null, "teams": [string]|null, "car_numbers": [integer]|null, "lap": integer|null, "sector": 1|2|3|null, "location": string|null}\n'
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
+            "Take a screenshot of the current F1 race replay video frame. "
+            "Analyze only what is clearly visible right now. Identify:\n"
+            "- frame_time_s: video timestamp in seconds\n"
+            "- lap: current lap number\n"
+            "- flag_status: one of GREEN, YELLOW, DOUBLE_YELLOW, RED, SAFETY_CAR, VSC, CHEQUERED\n"
+            "- weather: condition (CLEAR/CLOUDY/LIGHT_RAIN/HEAVY_RAIN/MIXED), temperatures, "
+            "precipitation percentage, wind speed\n"
+            "- state_confidence: how clearly the frame is readable (0.0–1.0)\n"
+            "- events: any visible race events from this list only — "
+            "OVERTAKE, YELLOW_FLAG, SAFETY_CAR, VSC, PIT_STOP, CRASH, SPIN, "
+            "TRACK_LIMITS, WEATHER_SHIFT, RETIREMENT, FASTEST_LAP\n\n"
             "Rules:\n"
-            "- Do not hallucinate details that are not visible in the frame.\n"
-            "- If uncertain, reduce state_confidence and event confidence.\n"
-            "- If no supported event is visible, return an empty events array.\n"
-            "- Output JSON only; no markdown, no prose."
+            "- Do not hallucinate. Only report what is clearly visible.\n"
+            "- If uncertain, lower state_confidence and event confidence values.\n"
+            "- If no supported event is visible, return an empty events list."
         )
-
-    def _run_browser_use_task(self, prompt: str) -> str:
-        try:
-            from browser_use import Agent  # type: ignore
-        except Exception as exc:
-            raise RuntimeError("Install browser-use to enable frame analysis") from exc
-
-        llm = self._build_llm()
-
-        async def _runner() -> str:
-            ctor_sig = inspect.signature(Agent)
-            agent_kwargs: dict[str, Any] = {"task": prompt, "llm": llm}
-            if "use_vision" in ctor_sig.parameters:
-                agent_kwargs["use_vision"] = True
-            if "max_actions_per_step" in ctor_sig.parameters:
-                agent_kwargs["max_actions_per_step"] = 1
-            agent = Agent(**agent_kwargs)
-
-            run_kwargs: dict[str, Any] = {}
-            run_sig = inspect.signature(agent.run)
-            if "max_steps" in run_sig.parameters:
-                run_kwargs["max_steps"] = self.config.browser_use_max_steps
-            if "use_vision" in run_sig.parameters:
-                run_kwargs["use_vision"] = True
-
-            run_coro = agent.run(**run_kwargs)
-            result = await asyncio.wait_for(run_coro, timeout=self.config.browser_use_timeout_s)
-            return self._normalize_agent_result(result, agent)
-
-        return asyncio.run(_runner())
-
-    def _build_llm(self) -> Any:
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is required for Browser Use vision analysis")
-        try:
-            from langchain_openai import ChatOpenAI  # type: ignore
-        except Exception as exc:
-            raise RuntimeError("Install langchain-openai for Browser Use LLM wiring") from exc
-
-        return ChatOpenAI(model=self.config.openai_model, temperature=0, api_key=api_key)
-
-    @staticmethod
-    def _normalize_agent_result(result: Any, agent: Any) -> str:
-        if isinstance(result, str):
-            return result
-        if hasattr(result, "final_result"):
-            value = result.final_result
-            return value() if callable(value) else str(value)
-        if hasattr(agent, "history") and hasattr(agent.history, "final_result"):
-            value = agent.history.final_result
-            return value() if callable(value) else str(value)
-        return str(result)
 
     @staticmethod
     def _extract_json(raw: str) -> dict[str, Any]:
+        """Parse a JSON object from raw text, stripping markdown fences if present."""
         text = raw.strip()
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -672,57 +716,60 @@ def run_loop(config: VisionRuntimeConfig, once: bool = False) -> None:
     analyzer = BrowserUseFrameAnalyzer(config)
     session = RuntimeSession(session_id=config.session_id)
 
-    while True:
-        tick_start = time.monotonic()
-        with start_laminar_span(
-            name="vision.tick",
-            span_type="DEFAULT",
-            input_payload={"session_id": config.session_id},
-            metadata={
-                "session_id": config.session_id,
-                "stream_url": config.stream_url,
-                "component": "vision_runtime",
-            },
-            tags=["pipeline:f1_replay", "component:vision", "stage:tick"],
-            attributes={
-                "vision.tick_interval_s": config.tick_interval_s,
-                "vision.tick_jitter_s": config.tick_jitter_s,
-            },
-        ):
-            set_laminar_trace_context(
-                session_id=config.session_id,
-                metadata={"stream_url": config.stream_url, "component": "vision_runtime"},
-            )
-            try:
-                state, events = get_live_race_state(analyzer, config, session)
-                envelope = {
-                    "race_state": state.to_dict(),
-                    "race_events": [event.to_dict() for event in events],
-                }
-                print(json.dumps(envelope, separators=(",", ":")), flush=True)
-                if config.output_path:
-                    _append_emission(config.output_path, envelope)
-                set_laminar_span_output(
-                    output={
-                        "status": "ok",
-                        "tick_ts_utc": state.tick_ts_utc,
-                        "event_count": len(events),
-                    },
-                    tags=["status:ok", "stage:tick"],
+    try:
+        while True:
+            tick_start = time.monotonic()
+            with start_laminar_span(
+                name="vision.tick",
+                span_type="DEFAULT",
+                input_payload={"session_id": config.session_id},
+                metadata={
+                    "session_id": config.session_id,
+                    "stream_url": config.stream_url,
+                    "component": "vision_runtime",
+                },
+                tags=["pipeline:f1_replay", "component:vision", "stage:tick"],
+                attributes={
+                    "vision.tick_interval_s": config.tick_interval_s,
+                    "vision.tick_jitter_s": config.tick_jitter_s,
+                },
+            ):
+                set_laminar_trace_context(
+                    session_id=config.session_id,
+                    metadata={"stream_url": config.stream_url, "component": "vision_runtime"},
                 )
-            except Exception as exc:
-                set_laminar_span_output(
-                    output={"status": "error", "reason": f"tick_exception:{exc.__class__.__name__}"},
-                    tags=["status:error", "stage:tick"],
-                )
-                raise
+                try:
+                    state, events = get_live_race_state(analyzer, config, session)
+                    envelope = {
+                        "race_state": state.to_dict(),
+                        "race_events": [event.to_dict() for event in events],
+                    }
+                    print(json.dumps(envelope, separators=(",", ":")), flush=True)
+                    if config.output_path:
+                        _append_emission(config.output_path, envelope)
+                    set_laminar_span_output(
+                        output={
+                            "status": "ok",
+                            "tick_ts_utc": state.tick_ts_utc,
+                            "event_count": len(events),
+                        },
+                        tags=["status:ok", "stage:tick"],
+                    )
+                except Exception as exc:
+                    set_laminar_span_output(
+                        output={"status": "error", "reason": f"tick_exception:{exc.__class__.__name__}"},
+                        tags=["status:error", "stage:tick"],
+                    )
+                    raise
 
-        if once:
-            return
+            if once:
+                return
 
-        elapsed = time.monotonic() - tick_start
-        next_tick = max(0.2, config.tick_interval_s + random.uniform(-config.tick_jitter_s, config.tick_jitter_s) - elapsed)
-        time.sleep(next_tick)
+            elapsed = time.monotonic() - tick_start
+            next_tick = max(0.2, config.tick_interval_s + random.uniform(-config.tick_jitter_s, config.tick_jitter_s) - elapsed)
+            time.sleep(next_tick)
+    finally:
+        analyzer.stop()
 
 
 def _parse_args() -> argparse.Namespace:
