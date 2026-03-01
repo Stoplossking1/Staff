@@ -1,16 +1,92 @@
 .stream-shell {
   width: 100vw;
   height: 100vh;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(34, 72, 125, 0.2), transparent 48%),
+    radial-gradient(circle at 82% 78%, rgba(14, 53, 95, 0.25), transparent 55%),
+    #05080c;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: clamp(8px, 2vw, 18px);
+}
+
+.tv-bezel {
+  position: relative;
+  width: min(98vw, calc(96vh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #1c3047, #0d1522 42%, #1a2939);
+  box-shadow:
+    0 0 0 2px #2b4562,
+    0 0 0 4px rgba(103, 174, 243, 0.18),
+    0 20px 60px rgba(0, 0, 0, 0.7),
+    0 0 46px rgba(75, 145, 214, 0.22);
+}
+
+.tv-bezel::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(152, 205, 255, 0.22);
+  pointer-events: none;
+}
+
+.screen-surface {
+  position: absolute;
+  inset: 2.8%;
+  border-radius: 7px;
+  overflow: hidden;
   background: #000;
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.9);
+  display: grid;
+  grid-template-columns: 62% 38%;
+}
+
+.main-feed {
+  position: relative;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
 
-.stream-video {
+.side-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr 42%;
+  background: #06090f;
+}
+
+.stack-panel {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stack-panel:last-child {
+  border-bottom: 0;
+}
+
+.feed-video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  background: #000;
   display: block;
+  object-fit: cover;
+  background: #000;
+}
+
+.feed-video--onboard {
+  filter: brightness(0.92) saturate(1.08);
+}
+
+.feed-video--aux {
+  filter: brightness(0.88) saturate(1.02);
+}
+
+.video-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 55%, transparent 40%, rgba(0, 0, 0, 0.5) 100%);
 }
 
 .stream-error {
@@ -19,11 +95,48 @@
   bottom: 12px;
   margin: 0;
   color: #fff;
-  background: rgba(120, 0, 0, 0.8);
+  background: rgba(120, 0, 0, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 6px 8px;
   font-size: 12px;
   line-height: 1.2;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     'Courier New', monospace;
+}
+
+@media (max-width: 860px) {
+  .tv-bezel {
+    width: 100%;
+    aspect-ratio: auto;
+    height: min(94vh, 900px);
+  }
+
+  .screen-surface {
+    grid-template-columns: 1fr;
+    grid-template-rows: 58% 42%;
+  }
+
+  .main-feed {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .side-stack {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+
+  .stack-panel {
+    border-bottom: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .stack-panel:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .stack-panel--wide {
+    grid-column: 1 / span 2;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
 }
