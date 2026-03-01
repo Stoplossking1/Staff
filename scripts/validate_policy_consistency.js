@@ -64,8 +64,8 @@ expect(setEquals(supportedEventTypes, contractEventTypes), 'supported_event_type
 
 const hardNoBetConditions = betLibrary.hard_no_bet_conditions || [];
 expect(
-  hardNoBetConditions.some((line) => line.includes('cooldown_state is absent')),
-  'hard_no_bet_conditions must define behavior when cooldown_state is absent'
+  hardNoBetConditions.some((line) => line.trim() === 'race_state.cooldown_state is absent.'),
+  'hard_no_bet_conditions must fail closed when cooldown_state is absent'
 );
 expect(
   hardNoBetConditions.some((line) => line.includes('seconds_since_green_from_yellow_or_vsc')),
@@ -114,8 +114,13 @@ expect(
   'drama_rules.md must document cooldown decision inputs'
 );
 expect(
-  dramaRules.includes('If `cooldown_state` is absent, treat it as:'),
-  'drama_rules.md must define fallback behavior when cooldown_state is absent'
+  dramaRules.includes('If `cooldown_state` is absent, fail closed:'),
+  'drama_rules.md must define fail-closed behavior when cooldown_state is absent'
+);
+expect(
+  betLibrary.fallback_behavior?.missing_cooldown_state?.action === 'NO_BET' &&
+    betLibrary.fallback_behavior?.missing_cooldown_state?.side === 'NONE',
+  'fallback_behavior.missing_cooldown_state must explicitly define NO_BET/NONE'
 );
 
 expect(

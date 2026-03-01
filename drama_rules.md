@@ -53,10 +53,9 @@ Decisioning consumes cooldown metadata from `RaceState.cooldown_state`:
 - `seconds_since_green_from_yellow_or_vsc`: non-negative number or `null` when no GREEN transition has happened yet
 - `seconds_since_safety_car_restart`: non-negative number or `null` when no safety-car restart has happened yet
 
-If `cooldown_state` is absent, treat it as:
-- `last_neutralization=NONE`
-- `seconds_since_green_from_yellow_or_vsc=null`
-- `seconds_since_safety_car_restart=null`
+If `cooldown_state` is absent, fail closed:
+- return `NO_BET` / `NONE`
+- treat as upstream anomaly to be surfaced in decision reason/logging
 
 ## Side Mapping
 - `NO_BET` -> `side=NONE`.

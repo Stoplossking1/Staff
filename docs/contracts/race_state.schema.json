@@ -85,7 +85,7 @@
     },
     "cooldown_state": {
       "type": "object",
-      "description": "Optional derived timing metadata for neutralization cooldown gating in decisioning. When omitted, consumers should treat last_neutralization as NONE and timers as null.",
+      "description": "Optional derived timing metadata for neutralization cooldown gating in decisioning. When omitted, decisioning should fail closed (NO_BET) and surface an upstream anomaly.",
       "additionalProperties": false,
       "required": [
         "last_neutralization",
