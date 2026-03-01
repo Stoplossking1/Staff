@@ -4,7 +4,7 @@ import { v } from "convex/values";
 export const insert = mutation({
   args: {
     session_id: v.string(),
-    schema_version: v.optional(v.string()),
+    schema_version: v.string(),
     logged_at_utc: v.string(),
     decision_id: v.string(),
     event_id: v.string(),
@@ -22,6 +22,11 @@ export const insert = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("paper_bets")
+      .withIndex("by_decision_id", (q) => q.eq("decision_id", args.decision_id))
+      .first();
+    if (existing) return existing._id;
     return await ctx.db.insert("paper_bets", args);
   },
 });

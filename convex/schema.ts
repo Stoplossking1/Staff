@@ -19,7 +19,7 @@ export default defineSchema({
     size_usd: v.float64(),
     bankroll_usd: v.float64(),
     reason: v.string(),
-    schema_version: v.optional(v.string()),
+    schema_version: v.string(),
   })
     .index("by_decision_id", ["decision_id"])
     .index("by_session_and_time", ["session_id", "logged_at_utc"]),
@@ -98,5 +98,7 @@ export default defineSchema({
     version: v.string(),
     config: v.any(),
     updated_at_utc: v.string(),
-  }).index("by_name_version", ["name", "version"]),
+  })
+    .index("by_name_version", ["name", "version"])
+    .index("by_name_updated", ["name", "updated_at_utc"]),
 });

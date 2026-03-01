@@ -88,7 +88,7 @@ def push_race_state(state_dict: dict[str, Any]) -> None:
     """Push a race-state tick snapshot to Convex."""
     try:
         client = _get_client()
-        client.mutation("raceStates:insert", {
+        args: dict[str, Any] = {
             "session_id": state_dict["session_id"],
             "schema_version": state_dict.get("schema_version", "1.0.0"),
             "tick_ts_utc": state_dict["tick_ts_utc"],
@@ -96,8 +96,11 @@ def push_race_state(state_dict: dict[str, Any]) -> None:
             "flag_status": state_dict["flag_status"],
             "weather": state_dict["weather"],
             "active_events": state_dict.get("active_events", []),
-            "cooldown_state": state_dict.get("cooldown_state"),
-        })
+        }
+        cooldown = state_dict.get("cooldown_state")
+        if cooldown is not None:
+            args["cooldown_state"] = cooldown
+        client.mutation("raceStates:insert", args)
     except Exception:
         logger.warning("convex_sink: failed to push race_state", exc_info=True)
 

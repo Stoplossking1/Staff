@@ -27,6 +27,11 @@ export const insert = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("race_events")
+      .withIndex("by_event_id", (q) => q.eq("event_id", args.event_id))
+      .first();
+    if (existing) return existing._id;
     return await ctx.db.insert("race_events", args);
   },
 });
