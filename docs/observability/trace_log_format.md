@@ -8,6 +8,11 @@ This trace format gives full per-tick auditability across:
 Every JSONL record carries correlation IDs so QA can reconstruct:
 `tick_id -> event_id(s) -> decision_id`
 
+When Laminar is configured (`LMNR_PROJECT_API_KEY`), the same lifecycle also emits Laminar spans:
+- `tick.lifecycle` (root, `DEFAULT`)
+- `vision.detect_events` (`LLM`)
+- `betting.compute_decision` (`TOOL`)
+
 ## Log Path
 - Default path: `.context/evidence/observability_trace.jsonl`
 - Override with env var: `OBS_TRACE_LOG_PATH`

@@ -17,6 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from observability import (
+    initialize_laminar_from_env,
+    set_laminar_span_output,
+    set_laminar_trace_context,
+    shutdown_laminar,
+    start_laminar_span,
+)
+
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY_PATH = Path("bet_library.json")
 DEFAULT_PAPER_BETS_PATH = Path("paper_bets.csv")
@@ -623,55 +631,83 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-
-    race_state = _load_json(args.race_state)
-    raw_quotes = _load_json(args.market_quotes)
-    if isinstance(raw_quotes, dict):
-        market_quotes = list(raw_quotes.get("markets", []))
-    elif isinstance(raw_quotes, list):
-        market_quotes = raw_quotes
-    else:
-        raise ValueError("--market-quotes must contain a JSON array or an object with a 'markets' array.")
-
-    event_context: dict[str, Any] = {}
-    if args.event_context:
-        loaded_context = _load_json(args.event_context)
-        if not isinstance(loaded_context, dict):
-            raise ValueError("--event-context must be a JSON object.")
-        event_context = loaded_context
-
-    policy = _load_json(args.policy_path)
-
-    risk = RiskCaps(
-        bankroll_usd=float(args.bankroll_usd),
-        kelly_multiplier=float(args.kelly_multiplier),
-        max_kelly_fraction=float(args.max_kelly_fraction),
-        max_bankroll_pct_per_bet=float(args.max_bankroll_pct_per_bet),
-        max_total_exposure_pct=float(args.max_total_exposure_pct),
-        current_exposure_usd=float(args.current_exposure_usd),
-        max_bet_usd=float(args.max_bet_usd),
-        min_bet_usd=float(args.min_bet_usd),
+    initialize_laminar_from_env(
+        service_name="bet_engine_cli",
+        metadata={"component": "betting_engine_cli"},
     )
 
-    decision = generate_bet_decision(
-        race_state=race_state,
-        market_quotes=market_quotes,
-        model_probability=float(args.model_probability),
-        decision_confidence=float(args.decision_confidence),
-        risk=risk,
-        policy=policy,
-        event_context=event_context,
-        fallback_market_probability=float(args.fallback_market_probability),
-    )
+    try:
+        race_state = _load_json(args.race_state)
+        raw_quotes = _load_json(args.market_quotes)
+        if isinstance(raw_quotes, dict):
+            market_quotes = list(raw_quotes.get("markets", []))
+        elif isinstance(raw_quotes, list):
+            market_quotes = raw_quotes
+        else:
+            raise ValueError("--market-quotes must contain a JSON array or an object with a 'markets' array.")
 
-    print_terminal_block(decision, bankroll_usd=risk.bankroll_usd)
-    append_paper_bet_row(decision, bankroll_usd=risk.bankroll_usd, csv_path=args.paper_bets_path)
+        event_context: dict[str, Any] = {}
+        if args.event_context:
+            loaded_context = _load_json(args.event_context)
+            if not isinstance(loaded_context, dict):
+                raise ValueError("--event-context must be a JSON object.")
+            event_context = loaded_context
 
-    if args.output_json:
-        args.output_json.parent.mkdir(parents=True, exist_ok=True)
-        args.output_json.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+        policy = _load_json(args.policy_path)
 
-    print(json.dumps(decision, indent=2))
+        risk = RiskCaps(
+            bankroll_usd=float(args.bankroll_usd),
+            kelly_multiplier=float(args.kelly_multiplier),
+            max_kelly_fraction=float(args.max_kelly_fraction),
+            max_bankroll_pct_per_bet=float(args.max_bankroll_pct_per_bet),
+            max_total_exposure_pct=float(args.max_total_exposure_pct),
+            current_exposure_usd=float(args.current_exposure_usd),
+            max_bet_usd=float(args.max_bet_usd),
+            min_bet_usd=float(args.min_bet_usd),
+        )
+
+        with start_laminar_span(
+            name="betting.generate_decision",
+            span_type="TOOL",
+            input_payload={
+                "model_probability": float(args.model_probability),
+                "decision_confidence": float(args.decision_confidence),
+            },
+            metadata={"component": "betting_engine_cli"},
+            tags=["pipeline:f1_replay", "component:betting", "stage:decision"],
+            attributes={"bankroll_usd": risk.bankroll_usd},
+        ):
+            set_laminar_trace_context(metadata={"component": "betting_engine_cli"})
+            decision = generate_bet_decision(
+                race_state=race_state,
+                market_quotes=market_quotes,
+                model_probability=float(args.model_probability),
+                decision_confidence=float(args.decision_confidence),
+                risk=risk,
+                policy=policy,
+                event_context=event_context,
+                fallback_market_probability=float(args.fallback_market_probability),
+            )
+            set_laminar_span_output(
+                output={
+                    "status": "ok",
+                    "action": decision.get("action"),
+                    "decision_id": decision.get("decision_id"),
+                    "market_id": decision.get("market_id"),
+                },
+                tags=["status:ok", "stage:decision"],
+            )
+
+        print_terminal_block(decision, bankroll_usd=risk.bankroll_usd)
+        append_paper_bet_row(decision, bankroll_usd=risk.bankroll_usd, csv_path=args.paper_bets_path)
+
+        if args.output_json:
+            args.output_json.parent.mkdir(parents=True, exist_ok=True)
+            args.output_json.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+
+        print(json.dumps(decision, indent=2))
+    finally:
+        shutdown_laminar()
 
 
 if __name__ == "__main__":

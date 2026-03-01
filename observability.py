@@ -1,14 +1,11 @@
 """Lightweight trace instrumentation for replay detection and decisioning.
 
-This module is intentionally dependency-free and local-friendly:
-- Emits newline-delimited JSON records for easy grep/jq workflows.
-- Correlates each tick with emitted events and final decision IDs.
-- Provides wrappers to hook vision and betting steps with minimal code changes.
-- Supports optional Laminar forwarding through a callback sink.
+This module emits local JSONL traces and optionally mirrors span context/events into Laminar.
 """
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
@@ -21,6 +18,16 @@ import uuid
 
 TRACE_LOG_SCHEMA_VERSION = "1.0.0"
 DEFAULT_TRACE_LOG_PATH = ".context/evidence/observability_trace.jsonl"
+LAMINAR_SERVICE_NAME = "f1_replay_pipeline"
+
+try:
+    from lmnr import Laminar  # type: ignore
+    from lmnr.opentelemetry_lib.tracing.instruments import Instruments  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    Laminar = None
+    Instruments = None
+
+LaminarMetadataValue = str | bool | int | float | list[str] | list[bool] | list[int] | list[float]
 
 
 def _utc_now_iso() -> str:
@@ -43,6 +50,305 @@ class TickTraceContext:
     tick_ts_utc: str
     source: str
     started_ns: int
+    laminar_root_span: Any | None = None
+    laminar_parent_span_context: Any | None = None
+    laminar_trace_id: str | None = None
+
+
+def _laminar_is_ready() -> bool:
+    if Laminar is None:
+        return False
+    try:
+        return bool(Laminar.is_initialized())
+    except Exception:
+        return False
+
+
+def _coerce_laminar_value(value: Any) -> LaminarMetadataValue | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return []
+        if all(isinstance(item, bool) for item in value):
+            return [bool(item) for item in value]
+        if all(isinstance(item, int) and not isinstance(item, bool) for item in value):
+            return [int(item) for item in value]
+        if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value):
+            return [float(item) for item in value]
+        if all(isinstance(item, str) for item in value):
+            return [str(item) for item in value]
+        return [str(item) for item in value]
+    return str(value)
+
+
+def _normalize_laminar_metadata(metadata: Mapping[str, Any] | None) -> dict[str, LaminarMetadataValue]:
+    normalized: dict[str, LaminarMetadataValue] = {}
+    if metadata is None:
+        return normalized
+    for key, value in metadata.items():
+        if not isinstance(key, str) or not key:
+            continue
+        coerced = _coerce_laminar_value(value)
+        if coerced is not None:
+            normalized[key] = coerced
+    return normalized
+
+
+def _laminar_tags(*, source: str, stage: str | None = None) -> list[str]:
+    tags = [
+        "pipeline:f1_replay",
+        f"env:{os.getenv('LMNR_ENV', 'local')}",
+        f"source:{source}",
+    ]
+    if stage:
+        tags.append(f"stage:{stage}")
+    return tags
+
+
+def initialize_laminar_from_env(
+    *,
+    service_name: str = LAMINAR_SERVICE_NAME,
+    metadata: Mapping[str, Any] | None = None,
+) -> bool:
+    """Initialize Laminar once from env vars. Returns True when active."""
+    if Laminar is None:
+        return False
+    if _laminar_is_ready():
+        return True
+
+    project_api_key = os.getenv("LMNR_PROJECT_API_KEY", "").strip()
+    if not project_api_key:
+        return False
+
+    selected_instruments: list[Any] = []
+    if Instruments is not None:
+        for name in ("OPENAI", "LANGCHAIN", "BROWSER_USE", "BROWSER_USE_SESSION"):
+            instrument = getattr(Instruments, name, None)
+            if instrument is not None:
+                selected_instruments.append(instrument)
+
+    init_metadata = _normalize_laminar_metadata(
+        {
+            "service": service_name,
+            "environment": os.getenv("LMNR_ENV", "local"),
+            **dict(metadata or {}),
+        }
+    )
+
+    kwargs: dict[str, Any] = {
+        "project_api_key": project_api_key,
+        "metadata": init_metadata,
+    }
+    base_url = os.getenv("LMNR_BASE_URL", "").strip()
+    if base_url:
+        kwargs["base_url"] = base_url
+    if selected_instruments:
+        kwargs["instruments"] = selected_instruments
+
+    try:
+        Laminar.initialize(**kwargs)
+        return _laminar_is_ready()
+    except Exception:
+        return False
+
+
+def shutdown_laminar() -> None:
+    """Flush + shutdown Laminar exporters for short-lived processes."""
+    if not _laminar_is_ready() or Laminar is None:
+        return
+    try:
+        Laminar.force_flush()
+    except Exception:
+        pass
+    try:
+        Laminar.shutdown()
+    except Exception:
+        pass
+
+
+def start_laminar_span(
+    *,
+    name: str,
+    span_type: str = "DEFAULT",
+    input_payload: Any = None,
+    parent_span_context: Any | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    tags: Sequence[str] | None = None,
+    attributes: Mapping[str, Any] | None = None,
+):
+    """Return a Laminar span context manager, or a no-op context manager."""
+    if not _laminar_is_ready() or Laminar is None:
+        return nullcontext(None)
+
+    kwargs: dict[str, Any] = {
+        "name": name,
+        "span_type": span_type,
+        "input": input_payload,
+    }
+    if parent_span_context is not None:
+        kwargs["parent_span_context"] = parent_span_context
+    if metadata:
+        kwargs["metadata"] = _normalize_laminar_metadata(metadata)
+    if tags:
+        kwargs["tags"] = list(tags)
+    if attributes:
+        kwargs["attributes"] = dict(attributes)
+
+    try:
+        return Laminar.start_as_current_span(**kwargs)
+    except Exception:
+        return nullcontext(None)
+
+
+def set_laminar_trace_context(
+    *,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    tags: Sequence[str] | None = None,
+    attributes: Mapping[str, Any] | None = None,
+) -> None:
+    if not _laminar_is_ready() or Laminar is None:
+        return
+    try:
+        if user_id:
+            Laminar.set_trace_user_id(user_id)
+        if session_id:
+            Laminar.set_trace_session_id(session_id)
+        if metadata:
+            Laminar.set_trace_metadata(_normalize_laminar_metadata(metadata))
+        if tags:
+            Laminar.set_span_tags(list(tags))
+        if attributes:
+            Laminar.set_span_attributes(dict(attributes))
+    except Exception:
+        pass
+
+
+def set_laminar_span_output(
+    *,
+    output: Any | None = None,
+    attributes: Mapping[str, Any] | None = None,
+    tags: Sequence[str] | None = None,
+) -> None:
+    if not _laminar_is_ready() or Laminar is None:
+        return
+    try:
+        if output is not None:
+            Laminar.set_span_output(output)
+        if attributes:
+            Laminar.set_span_attributes(dict(attributes))
+        if tags:
+            Laminar.set_span_tags(list(tags))
+    except Exception:
+        pass
+
+
+def _start_tick_root_span(
+    *,
+    tick_id: str,
+    tick_ts_utc: str,
+    source: str,
+    metadata: Mapping[str, Any] | None,
+) -> tuple[Any | None, Any | None, str | None]:
+    if not _laminar_is_ready() or Laminar is None:
+        return None, None, None
+
+    normalized_metadata = _normalize_laminar_metadata(metadata)
+    span_metadata: dict[str, LaminarMetadataValue] = {
+        "tick_id": tick_id,
+        "tick_ts_utc": tick_ts_utc,
+        "source": source,
+        **normalized_metadata,
+    }
+    session_id_value = normalized_metadata.get("session_id")
+    session_id = session_id_value if isinstance(session_id_value, str) else None
+    user_id_value = normalized_metadata.get("user_id")
+    user_id = user_id_value if isinstance(user_id_value, str) else None
+
+    root_span: Any | None = None
+    try:
+        root_span = Laminar.start_span(
+            name="tick.lifecycle",
+            span_type="DEFAULT",
+            input={"tick_id": tick_id, "tick_ts_utc": tick_ts_utc, "source": source},
+            metadata=span_metadata,
+            tags=_laminar_tags(source=source, stage="tick"),
+            session_id=session_id,
+            user_id=user_id,
+            attributes={
+                "tick.id": tick_id,
+                "tick.source": source,
+                "tick.timestamp_utc": tick_ts_utc,
+            },
+        )
+        parent_context = Laminar.get_laminar_span_context(root_span)
+
+        trace_id = None
+        with Laminar.use_span(root_span, end_on_exit=False):
+            set_laminar_trace_context(
+                user_id=user_id,
+                session_id=session_id,
+                metadata=span_metadata,
+                tags=_laminar_tags(source=source, stage="tick"),
+            )
+            trace_uuid = Laminar.get_trace_id()
+            trace_id = str(trace_uuid) if trace_uuid is not None else None
+
+        return root_span, parent_context, trace_id
+    except Exception:
+        if root_span is not None:
+            try:
+                root_span.end()
+            except Exception:
+                pass
+        return None, None, None
+
+
+def _finish_tick_root_span(
+    ctx: TickTraceContext,
+    *,
+    status: str,
+    reason: str,
+    event_ids: Sequence[str],
+    decision_id: str | None,
+) -> None:
+    if not _laminar_is_ready() or Laminar is None or ctx.laminar_root_span is None:
+        return
+
+    try:
+        with Laminar.use_span(ctx.laminar_root_span, end_on_exit=False):
+            set_laminar_span_output(
+                output={
+                    "status": status,
+                    "reason": reason,
+                    "event_ids": list(event_ids),
+                    "decision_id": decision_id,
+                },
+                attributes={
+                    "tick.status": status,
+                    "tick.reason": reason,
+                    "tick.event_count": len(event_ids),
+                    "tick.decision_id": decision_id or "",
+                },
+                tags=[f"status:{status}", f"source:{ctx.source}", "stage:tick"],
+            )
+    except Exception:
+        pass
+    finally:
+        try:
+            ctx.laminar_root_span.end()
+        except Exception:
+            pass
 
 
 class TraceLogger:
@@ -78,12 +384,21 @@ class TraceLogger:
         safe_ts = _sanitize_timestamp_for_id(tick_ts_utc)
         computed_tick_id = tick_id or f"tick_{safe_ts}_{seq:06d}"
         computed_trace_id = trace_id or f"trace_{computed_tick_id}"
+        root_span, parent_context, laminar_trace_id = _start_tick_root_span(
+            tick_id=computed_tick_id,
+            tick_ts_utc=tick_ts_utc,
+            source=source,
+            metadata=metadata,
+        )
         ctx = TickTraceContext(
             trace_id=computed_trace_id,
             tick_id=computed_tick_id,
             tick_ts_utc=tick_ts_utc,
             source=source,
             started_ns=time.perf_counter_ns(),
+            laminar_root_span=root_span,
+            laminar_parent_span_context=parent_context,
+            laminar_trace_id=laminar_trace_id,
         )
         self._emit(
             {
@@ -95,6 +410,7 @@ class TraceLogger:
                 "confidence": 1.0,
                 "reason": "tick_ingested",
                 "metadata": dict(metadata or {}),
+                "laminar_trace_id": laminar_trace_id,
                 "correlation": {
                     "trace_id": ctx.trace_id,
                     "tick_id": ctx.tick_id,
@@ -243,6 +559,13 @@ class TraceLogger:
                 },
             }
         )
+        _finish_tick_root_span(
+            ctx,
+            status=status,
+            reason=reason,
+            event_ids=event_ids,
+            decision_id=decision_id,
+        )
 
     def log_error(
         self,
@@ -342,34 +665,60 @@ def instrument_vision_loop_tick(
     )
     started_ns = time.perf_counter_ns()
     try:
-        raw_events = list(detect_events() or [])
-        events: list[dict[str, Any]] = []
-        for idx, item in enumerate(raw_events):
-            if not isinstance(item, Mapping):
-                raise TypeError(f"detected event at index {idx} is not a mapping")
-            events.append(dict(item))
+        with start_laminar_span(
+            name="vision.detect_events",
+            span_type="LLM",
+            parent_span_context=ctx.laminar_parent_span_context,
+            input_payload={"tick_id": ctx.tick_id, "tick_ts_utc": ctx.tick_ts_utc},
+            metadata={"trace_id": ctx.trace_id, "source": ctx.source},
+            tags=_laminar_tags(source=ctx.source, stage="detection"),
+            attributes={"tick.id": ctx.tick_id},
+        ):
+            raw_events = list(detect_events() or [])
+            events: list[dict[str, Any]] = []
+            for idx, item in enumerate(raw_events):
+                if not isinstance(item, Mapping):
+                    raise TypeError(f"detected event at index {idx} is not a mapping")
+                events.append(dict(item))
 
-        detector_latency_ms = round((time.perf_counter_ns() - started_ns) / 1_000_000.0, 3)
-        event_ids: list[str] = []
-        for idx, event in enumerate(events):
-            event_id = trace_logger.log_detected_event(
+            detector_latency_ms = round((time.perf_counter_ns() - started_ns) / 1_000_000.0, 3)
+            event_ids: list[str] = []
+            for idx, event in enumerate(events):
+                event_id = trace_logger.log_detected_event(
+                    ctx,
+                    event,
+                    detector_latency_ms=detector_latency_ms,
+                    event_index=idx,
+                )
+                event["event_id"] = event_id
+                event_ids.append(event_id)
+
+            summary_reason = "events_detected" if event_ids else "no_events_detected"
+            trace_logger.log_detection_summary(
                 ctx,
-                event,
+                event_ids,
                 detector_latency_ms=detector_latency_ms,
-                event_index=idx,
+                reason=summary_reason,
             )
-            event["event_id"] = event_id
-            event_ids.append(event_id)
-
-        summary_reason = "events_detected" if event_ids else "no_events_detected"
-        trace_logger.log_detection_summary(
-            ctx,
-            event_ids,
-            detector_latency_ms=detector_latency_ms,
-            reason=summary_reason,
-        )
+            set_laminar_span_output(
+                output={
+                    "status": "ok",
+                    "event_count": len(event_ids),
+                    "event_ids": list(event_ids),
+                },
+                attributes={
+                    "detection.event_count": len(event_ids),
+                    "detection.latency_ms": detector_latency_ms,
+                },
+                tags=["stage:detection", f"source:{ctx.source}"],
+            )
     except Exception as exc:
         detector_latency_ms = round((time.perf_counter_ns() - started_ns) / 1_000_000.0, 3)
+        set_laminar_span_output(
+            output={"status": "error", "reason": f"vision_exception:{exc.__class__.__name__}"},
+            attributes={"detection.latency_ms": detector_latency_ms},
+            tags=["status:error", "stage:detection"],
+        )
         trace_logger.log_error(
             ctx,
             stage="detection",
@@ -404,9 +753,30 @@ def instrument_betting_engine_decision(
 
     started_ns = time.perf_counter_ns()
     try:
-        decision = dict(decide_bet())
+        with start_laminar_span(
+            name="betting.compute_decision",
+            span_type="TOOL",
+            parent_span_context=tick_ctx.laminar_parent_span_context,
+            input_payload={
+                "tick_id": tick_ctx.tick_id,
+                "event_ids": list(correlated_event_ids),
+            },
+            metadata={
+                "trace_id": tick_ctx.trace_id,
+                "source": tick_ctx.source,
+                "event_count": len(correlated_event_ids),
+            },
+            tags=_laminar_tags(source=tick_ctx.source, stage="decision"),
+            attributes={"tick.id": tick_ctx.tick_id, "decision.event_count": len(correlated_event_ids)},
+        ):
+            decision = dict(decide_bet())
     except Exception as exc:
         decision_latency_ms = round((time.perf_counter_ns() - started_ns) / 1_000_000.0, 3)
+        set_laminar_span_output(
+            output={"status": "error", "reason": f"betting_exception:{exc.__class__.__name__}"},
+            attributes={"decision.latency_ms": decision_latency_ms},
+            tags=["status:error", "stage:decision"],
+        )
         trace_logger.log_error(
             tick_ctx,
             stage="decision",
@@ -431,6 +801,20 @@ def instrument_betting_engine_decision(
         event_ids=correlated_event_ids,
     )
     decision["decision_id"] = decision_id
+    set_laminar_span_output(
+        output={
+            "status": "ok",
+            "decision_id": decision_id,
+            "action": decision.get("action"),
+            "side": decision.get("side"),
+        },
+        attributes={
+            "decision.latency_ms": decision_latency_ms,
+            "decision.action": str(decision.get("action", "")),
+            "decision.side": str(decision.get("side", "")),
+        },
+        tags=["status:ok", "stage:decision"],
+    )
     trace_logger.end_tick(
         tick_ctx,
         event_ids=correlated_event_ids,

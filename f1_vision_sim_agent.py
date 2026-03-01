@@ -13,6 +13,13 @@ import re
 import time
 from typing import Any, Mapping
 
+from observability import (
+    initialize_laminar_from_env,
+    set_laminar_span_output,
+    set_laminar_trace_context,
+    shutdown_laminar,
+    start_laminar_span,
+)
 from race_models import (
     CooldownState,
     EventEntities,
@@ -107,20 +114,57 @@ class BrowserUseFrameAnalyzer:
 
     def analyze_frame(self) -> dict[str, Any]:
         prompt = self._build_prompt()
-        try:
-            raw = self._run_browser_use_task(prompt)
-            parsed = self._extract_json(raw)
-            if not isinstance(parsed, dict):
-                raise ValueError("Browser Use response was not a JSON object")
-            parsed.setdefault("state_confidence", 0.0)
-            parsed.setdefault("events", [])
-            return parsed
-        except Exception as exc:  # fail closed to NO_BET-friendly state
-            return {
-                "state_confidence": 0.0,
-                "events": [],
-                "diagnostic": f"browser_use_unavailable_or_invalid: {exc}",
-            }
+        with start_laminar_span(
+            name="vision.analyze_frame",
+            span_type="LLM",
+            input_payload={
+                "stream_url": self.config.stream_url,
+                "model": self.config.openai_model,
+            },
+            metadata={
+                "session_id": self.config.session_id,
+                "component": "browser_use_analyzer",
+            },
+            tags=["pipeline:f1_replay", "component:vision", "stage:detection"],
+            attributes={
+                "vision.timeout_s": self.config.browser_use_timeout_s,
+                "vision.max_steps": self.config.browser_use_max_steps,
+            },
+        ):
+            set_laminar_trace_context(
+                session_id=self.config.session_id,
+                metadata={
+                    "stream_url": self.config.stream_url,
+                    "component": "vision_loop",
+                },
+            )
+            try:
+                raw = self._run_browser_use_task(prompt)
+                parsed = self._extract_json(raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("Browser Use response was not a JSON object")
+                parsed.setdefault("state_confidence", 0.0)
+                parsed.setdefault("events", [])
+                set_laminar_span_output(
+                    output={
+                        "status": "ok",
+                        "state_confidence": parsed.get("state_confidence", 0.0),
+                        "event_count": len(parsed.get("events", [])),
+                    },
+                    tags=["status:ok", "stage:detection"],
+                )
+                return parsed
+            except Exception as exc:  # fail closed to NO_BET-friendly state
+                diagnostic = f"browser_use_unavailable_or_invalid: {exc}"
+                set_laminar_span_output(
+                    output={"status": "error", "diagnostic": diagnostic},
+                    tags=["status:error", "stage:detection"],
+                )
+                return {
+                    "state_confidence": 0.0,
+                    "events": [],
+                    "diagnostic": diagnostic,
+                }
 
     def _build_prompt(self) -> str:
         return (
@@ -630,14 +674,48 @@ def run_loop(config: VisionRuntimeConfig, once: bool = False) -> None:
 
     while True:
         tick_start = time.monotonic()
-        state, events = get_live_race_state(analyzer, config, session)
-        envelope = {
-            "race_state": state.to_dict(),
-            "race_events": [event.to_dict() for event in events],
-        }
-        print(json.dumps(envelope, separators=(",", ":")), flush=True)
-        if config.output_path:
-            _append_emission(config.output_path, envelope)
+        with start_laminar_span(
+            name="vision.tick",
+            span_type="DEFAULT",
+            input_payload={"session_id": config.session_id},
+            metadata={
+                "session_id": config.session_id,
+                "stream_url": config.stream_url,
+                "component": "vision_runtime",
+            },
+            tags=["pipeline:f1_replay", "component:vision", "stage:tick"],
+            attributes={
+                "vision.tick_interval_s": config.tick_interval_s,
+                "vision.tick_jitter_s": config.tick_jitter_s,
+            },
+        ):
+            set_laminar_trace_context(
+                session_id=config.session_id,
+                metadata={"stream_url": config.stream_url, "component": "vision_runtime"},
+            )
+            try:
+                state, events = get_live_race_state(analyzer, config, session)
+                envelope = {
+                    "race_state": state.to_dict(),
+                    "race_events": [event.to_dict() for event in events],
+                }
+                print(json.dumps(envelope, separators=(",", ":")), flush=True)
+                if config.output_path:
+                    _append_emission(config.output_path, envelope)
+                set_laminar_span_output(
+                    output={
+                        "status": "ok",
+                        "tick_ts_utc": state.tick_ts_utc,
+                        "event_count": len(events),
+                    },
+                    tags=["status:ok", "stage:tick"],
+                )
+            except Exception as exc:
+                set_laminar_span_output(
+                    output={"status": "error", "reason": f"tick_exception:{exc.__class__.__name__}"},
+                    tags=["status:error", "stage:tick"],
+                )
+                raise
 
         if once:
             return
@@ -676,7 +754,14 @@ def main() -> None:
     if args.output_path is not None:
         config.output_path = args.output_path
 
-    run_loop(config, once=args.once)
+    initialize_laminar_from_env(
+        service_name="f1_vision_sim_agent",
+        metadata={"component": "vision_runtime"},
+    )
+    try:
+        run_loop(config, once=args.once)
+    finally:
+        shutdown_laminar()
 
 
 if __name__ == "__main__":
