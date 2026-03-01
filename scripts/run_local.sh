@@ -62,4 +62,14 @@ printf "Starting agent loop: %s\n" "$AGENT_LOOP_CMD"
 bash -lc "$AGENT_LOOP_CMD" &
 agent_pid=$!
 
-wait "$agent_pid"
+wait -n "$stream_pid" "$agent_pid" && exit_code=0 || exit_code=$?
+
+if ! kill -0 "$stream_pid" >/dev/null 2>&1; then
+  printf "ERROR: Stream process (PID %s) crashed with exit code %s.\n" "$stream_pid" "$exit_code"
+  exit 1
+fi
+
+if ! kill -0 "$agent_pid" >/dev/null 2>&1; then
+  printf "Agent exited with code %s.\n" "$exit_code"
+  exit "$exit_code"
+fi
