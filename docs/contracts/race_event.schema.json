@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docs/contracts/race_event.schema.json",
+  "title": "RaceEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "timestamp_s",
+    "event_type",
+    "confidence",
+    "evidence",
+    "entities",
+    "severity"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Contract schema version. Current: 1.0.0."
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable unique identifier for a detected race event."
+    },
+    "timestamp_s": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Replay timestamp in seconds where the event is anchored."
+    },
+    "event_type": {
+      "$ref": "_common.schema.json#/$defs/event_type"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "start_s",
+        "end_s",
+        "summary"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "VISION",
+            "OCR",
+            "COMMENTARY",
+            "MULTI_MODAL"
+          ]
+        },
+        "start_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frame_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "drivers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "car_numbers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 99
+          }
+        },
+        "lap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sector": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "location": {
+          "type": "string"
+        }
+      }
+    },
+    "severity": {
+      "$ref": "_common.schema.json#/$defs/severity"
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "event_id": "evt_20260301_00125",
+      "timestamp_s": 412.34,
+      "event_type": "YELLOW_FLAG",
+      "confidence": 0.92,
+      "evidence": {
+        "source": "MULTI_MODAL",
+        "start_s": 409.8,
+        "end_s": 414.1,
+        "summary": "Trackside marshal panel turned yellow while commentary called out debris in sector 2.",
+        "frame_refs": [
+          "frames/000412_120.jpg",
+          "frames/000413_100.jpg"
+        ]
+      },
+      "entities": {
+        "drivers": [
+          "NOR",
+          "LEC"
+        ],
+        "teams": [
+          "MCLAREN",
+          "FERRARI"
+        ],
+        "car_numbers": [
+          4,
+          16
+        ],
+        "lap": 23,
+        "sector": 2,
+        "location": "Turns 9-10"
+      },
+      "severity": "MEDIUM"
+    }
+  ]
+}
