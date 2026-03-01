@@ -558,7 +558,6 @@ def get_live_race_state(
     weather = _parse_weather(weather_raw, previous.weather if previous else None)
 
     flag_status = _resolve_flag_status(analysis.get("flag_status"), new_events, previous)
-    tracked_cooldown_state = _build_cooldown_state(now, flag_status, session)
 
     uncertain = state_confidence < config.state_confidence_threshold
     if uncertain:
@@ -573,6 +572,7 @@ def get_live_race_state(
         )
         cooldown_state = None
     else:
+        tracked_cooldown_state = _build_cooldown_state(now, flag_status, session)
         session_active_events = _merge_active_events(
             existing=session.active_events,
             new_events=new_events,
@@ -599,7 +599,8 @@ def get_live_race_state(
         validate_race_state(state)
 
     session.active_events = session_active_events
-    session.previous_state = state
+    if not uncertain:
+        session.previous_state = state
     return state, new_events
 
 

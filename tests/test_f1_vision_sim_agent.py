@@ -8,7 +8,16 @@ from f1_vision_sim_agent import (
     _parse_entities,
     get_live_race_state,
 )
-from race_models import EventEntities, EventType, Evidence, EvidenceSource, FlagStatus, RaceEvent, Severity
+from race_models import (
+    EventEntities,
+    EventType,
+    Evidence,
+    EvidenceSource,
+    FlagStatus,
+    NeutralizationType,
+    RaceEvent,
+    Severity,
+)
 
 
 def _event(timestamp_s: float, *, car_number: int = 1) -> RaceEvent:
@@ -162,6 +171,39 @@ class VisionAgentUncertainTickTests(unittest.TestCase):
         self.assertIsNotNone(cooldown)
         if cooldown is not None:
             self.assertIsNotNone(cooldown.seconds_since_green_from_yellow_or_vsc)
+
+    def test_uncertain_noisy_flag_does_not_mutate_cooldown_session_state(self) -> None:
+        analyzer = _SequenceAnalyzer(
+            [
+                {
+                    "frame_time_s": 30.0,
+                    "state_confidence": 0.95,
+                    "flag_status": "GREEN",
+                    "events": [],
+                },
+                {
+                    "frame_time_s": 31.0,
+                    "state_confidence": 0.1,
+                    "flag_status": "SAFETY_CAR",
+                    "events": [],
+                },
+            ]
+        )
+        config = VisionRuntimeConfig()
+        config.validate_contracts = False
+        session = RuntimeSession(session_id="s")
+
+        first_state, _ = get_live_race_state(analyzer, config, session)
+        self.assertEqual(first_state.flag_status, FlagStatus.GREEN)
+        self.assertEqual(session.last_neutralization, NeutralizationType.NONE)
+
+        uncertain_state, _ = get_live_race_state(analyzer, config, session)
+        self.assertEqual(uncertain_state.flag_status, FlagStatus.SAFETY_CAR)
+        self.assertIsNone(uncertain_state.cooldown_state)
+        self.assertEqual(session.last_neutralization, NeutralizationType.NONE)
+        self.assertIsNotNone(session.previous_state)
+        if session.previous_state is not None:
+            self.assertEqual(session.previous_state.flag_status, FlagStatus.GREEN)
 
 
 if __name__ == "__main__":
