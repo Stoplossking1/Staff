@@ -5,9 +5,9 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "schema_version",
     "decision_id",
     "event_id",
-    "market_id",
     "side",
     "confidence",
     "model_probability",
@@ -19,6 +19,11 @@
     "reason"
   ],
   "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Contract schema version. Current: 1.0.0."
+    },
     "decision_id": {
       "type": "string",
       "minLength": 1
@@ -29,14 +34,13 @@
     },
     "market_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "Stable market identifier from the market adapter."
+      "description": "Stable market identifier from the market adapter. Required only for PLACE_BET and MONITOR."
     },
     "side": {
       "type": "string",
       "enum": [
-        "BACK",
-        "LAY",
+        "YES",
+        "NO",
         "NONE"
       ]
     },
@@ -105,15 +109,46 @@
           "kelly_fraction": {
             "const": 0
           }
+        },
+        "not": {
+          "required": [
+            "market_id"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "PLACE_BET",
+              "MONITOR"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "required": [
+          "market_id"
+        ],
+        "properties": {
+          "market_id": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }
   ],
   "examples": [
     {
+      "schema_version": "1.0.0",
       "decision_id": "dec_20260301_0090",
       "event_id": "evt_20260301_00125",
-      "market_id": "race_winner_norris",
       "side": "NONE",
       "confidence": 0.88,
       "model_probability": 0.51,

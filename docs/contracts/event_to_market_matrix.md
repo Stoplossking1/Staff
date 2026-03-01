@@ -15,7 +15,8 @@ This matrix is the contract between event detection and market decisioning. It s
 | `WEATHER_SHIFT` | Tyre strategy, race winner | `MONITOR` | Convert to `PLACE_BET` only when track condition and strategy impacts are aligned. |
 | `RETIREMENT` | Race winner, podium, points finish | `PLACE_BET` | Typically high-signal if retirement is confirmed and markets remain open. |
 | `FASTEST_LAP` | Fastest lap market | `MONITOR` | Limited spillover to winner markets unless paired with pace trend. |
-| `NO_EVENT` | None | `NO_BET` | Explicit no-op path. |
+
+No detected events => `active_events: []` and downstream `NO_BET` decision path.
 
 ## Valid Payload Examples
 
@@ -23,6 +24,7 @@ This matrix is the contract between event detection and market decisioning. It s
 
 ```json
 {
+  "schema_version": "1.0.0",
   "event_id": "evt_20260301_00125",
   "timestamp_s": 412.34,
   "event_type": "YELLOW_FLAG",
@@ -50,6 +52,7 @@ This matrix is the contract between event detection and market decisioning. It s
 
 ```json
 {
+  "schema_version": "1.0.0",
   "session_id": "australia_gp_replay_2026_qf",
   "tick_ts_utc": "2026-03-01T17:22:13Z",
   "lap": 23,
@@ -75,11 +78,13 @@ This matrix is the contract between event detection and market decisioning. It s
 
 ### BetDecision example (explicit NO_BET path)
 
+For `NO_BET`, this contract variant omits `market_id`.
+
 ```json
 {
+  "schema_version": "1.0.0",
   "decision_id": "dec_20260301_0090",
   "event_id": "evt_20260301_00125",
-  "market_id": "race_winner_norris",
   "side": "NONE",
   "confidence": 0.88,
   "model_probability": 0.51,

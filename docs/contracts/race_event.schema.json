@@ -5,6 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "schema_version",
     "event_id",
     "timestamp_s",
     "event_type",
@@ -14,6 +15,11 @@
     "severity"
   ],
   "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Contract schema version. Current: 1.0.0."
+    },
     "event_id": {
       "type": "string",
       "minLength": 1,
@@ -37,8 +43,7 @@
         "TRACK_LIMITS",
         "WEATHER_SHIFT",
         "RETIREMENT",
-        "FASTEST_LAP",
-        "NO_EVENT"
+        "FASTEST_LAP"
       ]
     },
     "confidence": {
@@ -136,6 +141,7 @@
   },
   "examples": [
     {
+      "schema_version": "1.0.0",
       "event_id": "evt_20260301_00125",
       "timestamp_s": 412.34,
       "event_type": "YELLOW_FLAG",

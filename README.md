@@ -1,4 +1,4 @@
-# Macau v1 Orchestration Contracts
+# F1 Replay Event-to-Bet Contracts
 
 This repository coordinates an F1 replay pipeline: replay video ingestion (`f1-stream`) -> Browser Use vision event detection -> race state aggregation -> paper betting decisioning.
 
@@ -27,6 +27,8 @@ No phase advancement without previous phase merge + checklist pass.
 - [RaceState schema](docs/contracts/race_state.schema.json)
 - [BetDecision schema](docs/contracts/bet_decision.schema.json)
 - [Event-to-market matrix](docs/contracts/event_to_market_matrix.md)
+
+Contracts are versioned via top-level `schema_version`.
 
 ## Merge Gate Checklist
 - Previous phase merged before starting next phase.
