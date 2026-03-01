@@ -2,3 +2,9 @@
 .env
 .env.*
 !.env.example
+
+# Node
+node_modules/
+
+# Convex
+.env.local

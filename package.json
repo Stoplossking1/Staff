@@ -1,0 +1,12 @@
+{
+  "name": "staff-f1-pipeline",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "convex:dev": "npx convex dev",
+    "convex:deploy": "npx convex deploy"
+  },
+  "dependencies": {
+    "convex": "^1.21.0"
+  }
+}
