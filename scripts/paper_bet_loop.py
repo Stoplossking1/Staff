@@ -221,8 +221,8 @@ def _print_place_bet(
     decision_id = decision.get("decision_id", f"dec_{uuid.uuid4().hex[:12]}")
     verb       = _signal_verb(action, side)
     ticker     = _ticker(etype, driver)
-    contracts  = _contracts(size, mkt_p)
-    price      = mkt_p
+    price      = mkt_p if side == "YES" else (1.0 - mkt_p)
+    contracts  = _contracts(size, price)
     ts         = tick_ts[11:19] if len(tick_ts) >= 19 else tick_ts
     headline   = _headline(etype, driver, action, side)
 

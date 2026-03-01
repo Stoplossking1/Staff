@@ -223,6 +223,12 @@
         "RACE_WINNER",
         "PODIUM_FINISH"
       ],
+      "market_priority": [
+        "SAFETY_CAR_DEPLOYMENT",
+        "DRIVER_RETIREMENT",
+        "RACE_WINNER",
+        "PODIUM_FINISH"
+      ],
       "min_event_confidence": 0.78,
       "supports_place_bet": true,
       "place_bet_requirements": [

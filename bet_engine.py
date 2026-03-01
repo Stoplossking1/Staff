@@ -467,7 +467,7 @@ def generate_bet_decision(
     market = _select_market(
         candidate_markets=list(rule.get("candidate_markets", [])),
         market_quotes=market_quotes,
-        market_priority=list(policy.get("market_priority", [])),
+        market_priority=list(rule.get("market_priority", policy.get("market_priority", []))),
     )
     if market is None:
         return no_bet(f"No live candidate market available for {event_type}.")
