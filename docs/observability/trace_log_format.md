@@ -32,6 +32,32 @@ Each line is one JSON object with these top-level fields:
 - `event_ids`: related event IDs for this record
 - `decision_id`: related decision ID when available
 
+### Record-Type Extensions
+In addition to the common fields above, records may include `record_type`-specific top-level fields:
+
+- `tick_start`
+  - `metadata`: caller-provided tick metadata object (empty object when none supplied)
+
+- `detection_event`
+  - `event_id`: normalized event ID for this detection record
+  - `event_type`: detected event type
+  - `severity`: detected event severity
+  - `event_index`: zero-based index of the event in the detector output
+  - `payload`: normalized event payload snapshot
+
+- `detection_summary`
+  - `event_count`: number of events detected for the tick
+
+- `decision_output`
+  - `decision_id`: normalized decision ID for this decision record
+  - `action`: decision action
+  - `side`: decision side
+  - `market_id`: market identifier when applicable
+  - `payload`: normalized decision payload snapshot
+
+- `tick_end`
+  - `status`: terminal tick status (`ok` or `error`)
+
 ## Hook Integration Points
 Use the wrappers from `observability.py`:
 
