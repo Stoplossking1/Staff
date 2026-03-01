@@ -48,13 +48,19 @@ cp .env.example .env
 npm ci --prefix f1-stream
 ```
 
-4. Run sanity checks:
+4. Install Python observability/runtime deps:
+
+```bash
+python3 -m pip install -U lmnr
+```
+
+5. Run sanity checks:
 
 ```bash
 ./scripts/checks.sh
 ```
 
-5. Start local stack:
+6. Start local stack:
 
 ```bash
 ./scripts/run_local.sh
@@ -93,7 +99,7 @@ Set in `.env`:
 - `LMNR_BASE_URL` (default: `https://api.lmnr.ai`)
 - `LMNR_ENV` (example: `local`)
 
-Your agent loop should pass these env vars into Laminar initialization.
+The runtime initializes Laminar from these env vars at process startup (before detection/decision spans).
 
 ## Optional Overrides
 - `STREAM_HOST` (default `127.0.0.1`)

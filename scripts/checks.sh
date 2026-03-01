@@ -39,6 +39,7 @@ warn_if_placeholder() {
 require_cmd node "install Node.js 20.19+ or 22.12+"
 require_cmd npm "comes with Node.js"
 require_cmd curl "required by scripts/run_local.sh health check"
+require_cmd python3 "required for agent loop and Laminar instrumentation"
 
 if command -v node >/dev/null 2>&1; then
   node_version="$(node -p 'process.versions.node')"
@@ -58,9 +59,11 @@ fi
 
 require_env OPENAI_API_KEY
 require_env LMNR_PROJECT_API_KEY
+require_env BROWSER_USE_API_KEY
 require_env AGENT_LOOP_CMD
 warn_if_placeholder OPENAI_API_KEY
 warn_if_placeholder LMNR_PROJECT_API_KEY
+warn_if_placeholder BROWSER_USE_API_KEY
 
 BROWSER_USE_MCP_MODE="${BROWSER_USE_MCP_MODE:-local}"
 if [[ "$BROWSER_USE_MCP_MODE" != "local" && "$BROWSER_USE_MCP_MODE" != "remote" ]]; then
@@ -88,6 +91,17 @@ fi
 
 if [[ -n "${STREAM_URL:-}" ]] && [[ "${STREAM_URL}" != http://* && "${STREAM_URL}" != https://* ]]; then
   errors+=("STREAM_URL must start with http:// or https://")
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 - <<'PY' >/dev/null 2>&1
+import importlib.util
+import sys
+sys.exit(0 if importlib.util.find_spec("lmnr") else 1)
+PY
+  then
+    warnings+=("Python package 'lmnr' not installed (Laminar spans disabled; install with: python3 -m pip install -U lmnr)")
+  fi
 fi
 
 if [[ ${#errors[@]} -gt 0 ]]; then
