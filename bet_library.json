@@ -68,8 +68,9 @@
     "Market quote age exceeds decision_guardrails.market_data.max_quote_age_s.",
     "Market liquidity is below decision_guardrails.market_data.min_liquidity_usd.",
     "race_state.flag_status is RED or DOUBLE_YELLOW.",
-    "If race_state.cooldown_state.last_neutralization is YELLOW_FLAG or VSC, race_state.cooldown_state.seconds_since_green_from_yellow_or_vsc must be >= decision_guardrails.cooldowns_s.post_green_from_yellow_or_vsc.",
-    "If race_state.cooldown_state.last_neutralization is SAFETY_CAR, race_state.cooldown_state.seconds_since_safety_car_restart must be >= decision_guardrails.cooldowns_s.post_safety_car_restart.",
+    "If race_state.cooldown_state is absent, treat it as last_neutralization=NONE and cooldown timers as null.",
+    "If race_state.cooldown_state.last_neutralization is YELLOW_FLAG or VSC, race_state.cooldown_state.seconds_since_green_from_yellow_or_vsc must be non-null and >= decision_guardrails.cooldowns_s.post_green_from_yellow_or_vsc.",
+    "If race_state.cooldown_state.last_neutralization is SAFETY_CAR, race_state.cooldown_state.seconds_since_safety_car_restart must be non-null and >= decision_guardrails.cooldowns_s.post_safety_car_restart.",
     "When evaluating PLACE_BET eligibility, supports_place_bet is false.",
     "No candidate market from the event is currently live."
   ],

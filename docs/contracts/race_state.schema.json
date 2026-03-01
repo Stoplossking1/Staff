@@ -85,7 +85,7 @@
     },
     "cooldown_state": {
       "type": "object",
-      "description": "Derived timing metadata for neutralization cooldown gating in decisioning.",
+      "description": "Optional derived timing metadata for neutralization cooldown gating in decisioning. When omitted, consumers should treat last_neutralization as NONE and timers as null.",
       "additionalProperties": false,
       "required": [
         "last_neutralization",
@@ -103,12 +103,20 @@
           ]
         },
         "seconds_since_green_from_yellow_or_vsc": {
-          "type": "number",
-          "minimum": 0
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Elapsed seconds since the most recent transition from YELLOW_FLAG or VSC to GREEN. Null when no such GREEN transition has occurred yet."
         },
         "seconds_since_safety_car_restart": {
-          "type": "number",
-          "minimum": 0
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Elapsed seconds since the most recent SAFETY_CAR restart to GREEN. Null when no restart has occurred yet."
         }
       }
     },
@@ -165,8 +173,8 @@
       },
       "cooldown_state": {
         "last_neutralization": "YELLOW_FLAG",
-        "seconds_since_green_from_yellow_or_vsc": 24,
-        "seconds_since_safety_car_restart": 9999
+        "seconds_since_green_from_yellow_or_vsc": null,
+        "seconds_since_safety_car_restart": null
       },
       "active_events": [
         {

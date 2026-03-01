@@ -143,7 +143,7 @@ Event examples (reference style, not fixed values):
 5) OVERTAKE
 {
   "schema_version": "1.0.0",
-  "event_id": "evt_702250_OVERTAKE_16",
+  "event_id": "evt_702250_OVERTAKE_4",
   "timestamp_s": 702.25,
   "event_type": "OVERTAKE",
   "confidence": 0.81,

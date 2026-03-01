@@ -42,23 +42,28 @@ Return `action=NO_BET`, `side=NONE`, `kelly_fraction=0`, `size_usd=0` when any i
 - Quote age > 10 seconds.
 - Liquidity < 1000 USD.
 - `flag_status` is `RED` or `DOUBLE_YELLOW`.
-- If `cooldown_state.last_neutralization` is `YELLOW_FLAG` or `VSC`, `cooldown_state.seconds_since_green_from_yellow_or_vsc` must be >= 20.
-- If `cooldown_state.last_neutralization` is `SAFETY_CAR`, `cooldown_state.seconds_since_safety_car_restart` must be >= 30.
+- If `cooldown_state.last_neutralization` is `YELLOW_FLAG` or `VSC`, `cooldown_state.seconds_since_green_from_yellow_or_vsc` must be non-null and >= 20.
+- If `cooldown_state.last_neutralization` is `SAFETY_CAR`, `cooldown_state.seconds_since_safety_car_restart` must be non-null and >= 30.
 - Event policy marks `supports_place_bet=false` while evaluating the `PLACE_BET` branch.
 - Event default policy is explicit `NO_BET` (`YELLOW_FLAG`, `SAFETY_CAR`, `TRACK_LIMITS`).
 
 ## Cooldown Inputs
 Decisioning consumes cooldown metadata from `RaceState.cooldown_state`:
 - `last_neutralization`: `NONE` | `YELLOW_FLAG` | `VSC` | `SAFETY_CAR`
-- `seconds_since_green_from_yellow_or_vsc`: non-negative number
-- `seconds_since_safety_car_restart`: non-negative number
+- `seconds_since_green_from_yellow_or_vsc`: non-negative number or `null` when no GREEN transition has happened yet
+- `seconds_since_safety_car_restart`: non-negative number or `null` when no safety-car restart has happened yet
+
+If `cooldown_state` is absent, treat it as:
+- `last_neutralization=NONE`
+- `seconds_since_green_from_yellow_or_vsc=null`
+- `seconds_since_safety_car_restart=null`
 
 ## Side Mapping
 - `NO_BET` -> `side=NONE`.
 - `MONITOR`:
   - `edge_pct >= 1.0` -> `YES`
   - `edge_pct <= -1.0` -> `NO`
-  - otherwise `NONE`
+  - otherwise `NONE` (defensive fallback; normal ladder flow already returns `NO_BET` for `abs(edge_pct) < 1.0`)
 - `PLACE_BET`:
   - `edge_pct >= 3.0` and `decision.confidence >= 0.8` -> `YES`
   - `edge_pct <= -3.0` and `decision.confidence >= 0.8` -> `NO`

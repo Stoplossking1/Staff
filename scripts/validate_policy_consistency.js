@@ -64,6 +64,10 @@ expect(setEquals(supportedEventTypes, contractEventTypes), 'supported_event_type
 
 const hardNoBetConditions = betLibrary.hard_no_bet_conditions || [];
 expect(
+  hardNoBetConditions.some((line) => line.includes('cooldown_state is absent')),
+  'hard_no_bet_conditions must define behavior when cooldown_state is absent'
+);
+expect(
   hardNoBetConditions.some((line) => line.includes('seconds_since_green_from_yellow_or_vsc')),
   'hard_no_bet_conditions must enforce post-green cooldown from yellow/VSC'
 );
@@ -90,6 +94,16 @@ expect(
   Array.isArray(cooldownState?.required) && cooldownState.required.includes('seconds_since_safety_car_restart'),
   'cooldown_state must require seconds_since_safety_car_restart'
 );
+expect(
+  Array.isArray(cooldownState?.properties?.seconds_since_green_from_yellow_or_vsc?.type) &&
+    cooldownState.properties.seconds_since_green_from_yellow_or_vsc.type.includes('null'),
+  'seconds_since_green_from_yellow_or_vsc must allow null'
+);
+expect(
+  Array.isArray(cooldownState?.properties?.seconds_since_safety_car_restart?.type) &&
+    cooldownState.properties.seconds_since_safety_car_restart.type.includes('null'),
+  'seconds_since_safety_car_restart must allow null'
+);
 
 expect(
   dramaRules.includes('evaluate `PLACE_BET` threshold first') && dramaRules.includes('never return `MONITOR` if `PLACE_BET` eligibility is satisfied'),
@@ -98,6 +112,10 @@ expect(
 expect(
   dramaRules.includes('Cooldown Inputs') && dramaRules.includes('cooldown_state.seconds_since_green_from_yellow_or_vsc'),
   'drama_rules.md must document cooldown decision inputs'
+);
+expect(
+  dramaRules.includes('If `cooldown_state` is absent, treat it as:'),
+  'drama_rules.md must define fallback behavior when cooldown_state is absent'
 );
 
 expect(
