@@ -95,9 +95,13 @@ function attachRecovery(video, { onFatal, onRecovered } = {}) {
   }
 
   const handleCanPlay = () => {
-    recoveryAttempts = 0
     void tryPlay().then((playing) => {
-      if (playing) markRecovered()
+      if (playing) {
+        markRecovered()
+        return
+      }
+
+      scheduleRecovery()
     })
   }
 
@@ -182,7 +186,7 @@ export default function App() {
     if (!main || onboardVideos.some((video) => !video)) return undefined
 
     const syncOnboards = () => {
-      if (!main.duration || !Number.isFinite(main.currentTime)) return
+      if (!Number.isFinite(main.duration) || main.duration <= 0 || !Number.isFinite(main.currentTime)) return
 
       const duration = main.duration
       const mainTime = main.currentTime

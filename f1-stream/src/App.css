@@ -13,7 +13,7 @@
 
 .tv-bezel {
   position: relative;
-  width: min(98vw, calc(96vh * 1.88));
+  width: min(98vw, calc(96vh * 16 / 9));
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   background: linear-gradient(145deg, #1c3047, #0d1522 42%, #1a2939);
