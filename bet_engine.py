@@ -158,6 +158,13 @@ def _parse_non_negative_float(value: Any) -> float | None:
     return parsed
 
 
+def _parse_non_negative_int(value: Any) -> int | None:
+    parsed = _parse_non_negative_float(value)
+    if parsed is None or not parsed.is_integer():
+        return None
+    return int(parsed)
+
+
 def _is_live_quote(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -243,13 +250,15 @@ def _is_place_gate_satisfied(
     if event_type == "SPIN":
         return bool(event_context.get("spin_recovery_not_observed", False))
     if event_type == "WEATHER_SHIFT":
-        return int(event_context.get("weather_persisted_ticks", 0)) >= 2 and bool(
+        persisted_ticks = _parse_non_negative_int(event_context.get("weather_persisted_ticks"))
+        return persisted_ticks is not None and persisted_ticks >= 2 and bool(
             event_context.get("strategy_alignment_confirmed", False)
         )
     if event_type == "RETIREMENT":
         return bool(event_context.get("retirement_confirmed", False))
     if event_type == "FASTEST_LAP":
-        return int(event_context.get("fastest_lap_repeatable_laps", 0)) >= 3
+        repeatable_laps = _parse_non_negative_int(event_context.get("fastest_lap_repeatable_laps"))
+        return repeatable_laps is not None and repeatable_laps >= 3
 
     return True
 

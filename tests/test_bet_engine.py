@@ -111,5 +111,87 @@ class BetEngineMarketDataValidationTests(unittest.TestCase):
         self.assertGreater(decision["size_usd"], 0)
 
 
+class BetEngineEventContextParsingTests(unittest.TestCase):
+    def test_weather_shift_invalid_persisted_ticks_does_not_crash(self) -> None:
+        decision = generate_bet_decision(
+            race_state={
+                "tick_ts_utc": "2026-03-01T17:22:13Z",
+                "flag_status": "GREEN",
+                "cooldown_state": {
+                    "last_neutralization": "NONE",
+                    "seconds_since_green_from_yellow_or_vsc": None,
+                    "seconds_since_safety_car_restart": None,
+                },
+                "active_events": [
+                    {
+                        "event_id": "evt_weather",
+                        "event_type": "WEATHER_SHIFT",
+                        "severity": "HIGH",
+                        "confidence": 0.95,
+                        "timestamp_s": 120.0,
+                    }
+                ],
+            },
+            market_quotes=[
+                {
+                    "market_id": "mkt_weather_1",
+                    "market_type": "TYRE_STRATEGY",
+                    "is_live": True,
+                    "implied_probability": 0.45,
+                    "quote_age_s": 1.0,
+                    "liquidity_usd": 3000.0,
+                }
+            ],
+            model_probability=0.70,
+            decision_confidence=0.90,
+            risk=RiskCaps(bankroll_usd=1000.0),
+            policy=POLICY,
+            event_context={"weather_persisted_ticks": "abc", "strategy_alignment_confirmed": True},
+        )
+
+        self.assertEqual(decision["action"], "MONITOR")
+        self.assertNotEqual(decision["action"], "PLACE_BET")
+
+    def test_fastest_lap_invalid_repeatable_laps_does_not_crash(self) -> None:
+        decision = generate_bet_decision(
+            race_state={
+                "tick_ts_utc": "2026-03-01T17:22:13Z",
+                "flag_status": "GREEN",
+                "cooldown_state": {
+                    "last_neutralization": "NONE",
+                    "seconds_since_green_from_yellow_or_vsc": None,
+                    "seconds_since_safety_car_restart": None,
+                },
+                "active_events": [
+                    {
+                        "event_id": "evt_fl",
+                        "event_type": "FASTEST_LAP",
+                        "severity": "MEDIUM",
+                        "confidence": 0.95,
+                        "timestamp_s": 130.0,
+                    }
+                ],
+            },
+            market_quotes=[
+                {
+                    "market_id": "mkt_fastest_lap_1",
+                    "market_type": "FASTEST_LAP",
+                    "is_live": True,
+                    "implied_probability": 0.45,
+                    "quote_age_s": 1.0,
+                    "liquidity_usd": 3000.0,
+                }
+            ],
+            model_probability=0.70,
+            decision_confidence=0.90,
+            risk=RiskCaps(bankroll_usd=1000.0),
+            policy=POLICY,
+            event_context={"fastest_lap_repeatable_laps": "abc"},
+        )
+
+        self.assertEqual(decision["action"], "MONITOR")
+        self.assertNotEqual(decision["action"], "PLACE_BET")
+
+
 if __name__ == "__main__":
     unittest.main()
