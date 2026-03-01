@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "docs/contracts/_common.schema.json",
+  "title": "ContractsCommonDefinitions",
+  "$defs": {
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "OVERTAKE",
+        "YELLOW_FLAG",
+        "SAFETY_CAR",
+        "VSC",
+        "PIT_STOP",
+        "CRASH",
+        "SPIN",
+        "TRACK_LIMITS",
+        "WEATHER_SHIFT",
+        "RETIREMENT",
+        "FASTEST_LAP"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "INFO",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    }
+  }
+}

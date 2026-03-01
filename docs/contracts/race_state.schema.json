@@ -102,30 +102,10 @@
             "minLength": 1
           },
           "event_type": {
-            "type": "string",
-            "enum": [
-              "OVERTAKE",
-              "YELLOW_FLAG",
-              "SAFETY_CAR",
-              "VSC",
-              "PIT_STOP",
-              "CRASH",
-              "SPIN",
-              "TRACK_LIMITS",
-              "WEATHER_SHIFT",
-              "RETIREMENT",
-              "FASTEST_LAP"
-            ]
+            "$ref": "_common.schema.json#/$defs/event_type"
           },
           "severity": {
-            "type": "string",
-            "enum": [
-              "INFO",
-              "LOW",
-              "MEDIUM",
-              "HIGH",
-              "CRITICAL"
-            ]
+            "$ref": "_common.schema.json#/$defs/severity"
           },
           "confidence": {
             "type": "number",
